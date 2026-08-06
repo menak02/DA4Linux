@@ -12,6 +12,7 @@ from da4linux.generator import (
     generate_pipewire_config,
     generate_filter_graph,
     detect_available_limiter,
+    detect_hardware_sink,
     peq_band_to_spa_filter,
 )
 from da4linux.parser import DAX3Profile, PEQBand
@@ -149,6 +150,182 @@ def test_generate_pipewire_config():
     assert "FooBook" in config
     assert "effect_input.da4linux" in config
     assert "effect_output.da4linux" in config
+
+
+def test_playback_props_has_no_media_class():
+    """The playback leg of the filter-chain must not claim Audio/Sink.
+
+    Only the capture leg (the virtual sink) may declare media.class = Audio/Sink.
+    A media.class on the Output-direction playback stream crashes the PipeWire
+    core daemon at startup.
+    """
+    profile = _make_profile()
+    device = _make_device()
+    config = generate_pipewire_config(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+    )
+    capture_block = config.split("capture.props")[1].split("}}")[0]
+    playback_block = config.split("playback.props")[1].split("}}")[0]
+    assert "media.class = Audio/Sink" in capture_block
+    assert "media.class" not in playback_block
+
+
+def test_playback_props_has_target_object_when_sink_detected():
+    """When a hardware sink is detected, the playback leg pins to it."""
+    profile = _make_profile()
+    device = _make_device()
+    fake_pactl = (
+        "1\talsa_output.pci-fake.analog-stereo\tPipeWire\t"
+        "s32le 2ch 48000Hz\tRUNNING\n"
+    )
+    config = generate_pipewire_config(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+        pactl_output=fake_pactl,
+    )
+    playback_block = config.split("playback.props")[1].split("}}")[0]
+    assert 'target.object = "alsa_output.pci-fake.analog-stereo"' in playback_block
+
+
+def test_playback_props_no_target_object_when_detection_fails():
+    """When detection fails, the config must omit target.object (never a
+    broken target)."""
+    profile = _make_profile()
+    device = _make_device()
+    with patch("da4linux.generator.detect_hardware_sink", return_value=None):
+        config = generate_pipewire_config(
+            profile, device,
+            ir_dir="/tmp/test_ir",
+            limiter_type="clamp",
+        )
+    playback_block = config.split("playback.props")[1].split("}}")[0]
+    assert "target.object" not in playback_block
+
+
+def test_capture_props_priority_session_900():
+    """The virtual sink must have high priority.session to become the
+    default sink."""
+    profile = _make_profile()
+    device = _make_device()
+    config = generate_pipewire_config(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+    )
+    capture_block = config.split("capture.props")[1].split("}}")[0]
+    assert "priority.session = 900" in capture_block
+
+
+def test_detect_hardware_sink_finds_alsa_output():
+    """pactl output with an alsa_output sink is picked."""
+    out = "49\talsa_output.pci-0000_00_1f.3.analog-stereo\tPipeWire\ts32le 2ch 48000Hz\tRUNNING\n"
+    assert detect_hardware_sink(pactl_output=out) == \
+        "alsa_output.pci-0000_00_1f.3.analog-stereo"
+
+
+def test_detect_hardware_sink_excludes_da4linux():
+    """da4linux nodes must never be picked as the target sink."""
+    out = (
+        "1\teffect_input.da4linux\tPipeWire\ts32le 2ch 48000Hz\tRUNNING\n"
+        "2\talsa_output.pci-fake.analog-stereo\tPipeWire\ts32le 2ch 48000Hz\tRUNNING\n"
+    )
+    assert detect_hardware_sink(pactl_output=out) == \
+        "alsa_output.pci-fake.analog-stereo"
+
+
+def test_detect_hardware_sink_none_when_no_alsa():
+    """No alsa_output sink in pactl output (and pw-cli unavailable) → None."""
+    def _no_tools(cmd):
+        raise OSError("no pipewire tools")
+
+    out = "1\tbluez_output.00_11_22.1\tPipeWire\ts32le 2ch 48000Hz\tRUNNING\n"
+    assert detect_hardware_sink(pactl_output=out, runner=_no_tools) is None
+
+
+def test_detect_hardware_sink_prefers_speaker_over_hdmi():
+    """Built-in Speaker sink must be preferred over HDMI sinks."""
+    out = (
+        "1\talsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__HDMI3__sink\t"
+        "PipeWire\ts32le 2ch 48000Hz\tSUSPENDED\n"
+        "2\talsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__HDMI2__sink\t"
+        "PipeWire\ts32le 2ch 48000Hz\tSUSPENDED\n"
+        "3\talsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink\t"
+        "PipeWire\ts32le 2ch 48000Hz\tIDLE\n"
+    )
+    assert detect_hardware_sink(pactl_output=out) == \
+        "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink"
+
+
+def test_detect_hardware_sink_falls_back_to_default():
+    """No speaker/analog sink → the default sink is used."""
+    from types import SimpleNamespace
+
+    def _fake_runner(cmd):
+        if cmd == ["pactl", "list", "sinks", "short"]:
+            return SimpleNamespace(stdout=(
+                "1\talsa_output.pci-0000_00_1f.3-platform.HiFi__HDMI1__sink\t"
+                "PipeWire\ts32le 2ch 48000Hz\tSUSPENDED\n"
+            ))
+        if cmd == ["pactl", "get-default-sink"]:
+            return SimpleNamespace(stdout=(
+                "alsa_output.pci-0000_00_1f.3-platform.HiFi__Speaker__sink\n"
+            ))
+        return SimpleNamespace(stdout="")
+
+    assert detect_hardware_sink(runner=_fake_runner) == \
+        "alsa_output.pci-0000_00_1f.3-platform.HiFi__Speaker__sink"
+
+
+def test_detect_hardware_sink_excludes_da4linux_default():
+    """The default sink must never be the da4linux virtual sink."""
+    from types import SimpleNamespace
+
+    def _fake_runner(cmd):
+        if cmd == ["pactl", "list", "sinks", "short"]:
+            return SimpleNamespace(stdout="")
+        if cmd == ["pactl", "get-default-sink"]:
+            return SimpleNamespace(stdout="effect_input.da4linux\n")
+        return SimpleNamespace(stdout="")
+
+    assert detect_hardware_sink(runner=_fake_runner) is None
+
+
+def test_capture_playback_props_have_no_volume_boost():
+    """The 6 dB volmax boost must not be baked into the sink volume.
+
+    KDE's volume OSD must see a normal 0-100% sink; the boost lives inside
+    the filter graph instead.
+    """
+    profile = _make_profile(volmax=96.0)
+    device = _make_device()
+    config = generate_pipewire_config(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+    )
+    capture_block = config.split("capture.props")[1].split("}}")[0]
+    playback_block = config.split("playback.props")[1].split("}}")[0]
+    assert "volume" not in capture_block
+    assert "volume" not in playback_block
+    assert "channelVolumes" not in capture_block
+    assert "channelVolumes" not in playback_block
+
+
+def test_volmax_boost_is_internal_gain_node():
+    """volmax_boost 96 (1/16 dB units) = 6 dB → linear gain node in graph."""
+    profile = _make_profile(volmax=96.0)
+    device = _make_device()
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+    )
+    assert "gain_out_l" in graph
+    assert "gain_out_r" in graph
+    assert '"Mult" = 1.995262' in graph
 
 
 def test_generate_no_peq_bands():

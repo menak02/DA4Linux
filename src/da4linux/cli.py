@@ -2,8 +2,13 @@
 """DA4Linux CLI — Dolby Audio-like processing for Linux via PipeWire."""
 
 import argparse
+import os
+import shutil
+import socket
+import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
@@ -115,6 +120,7 @@ def _cmd_generate(args):
     from .generator import (
         generate_pipewire_config,
         detect_available_limiter,
+        detect_hardware_sink,
         write_config,
     )
     from .profiles import get_profile
@@ -163,6 +169,13 @@ def _cmd_generate(args):
             key = list(tuning.endpoints.keys())[0]
             profile = tuning.endpoints[key]
             print(f"  Using endpoint: {key}")
+            print(f"  DAX3 tuning loaded:")
+            print(f"    IEQ:           {'on' if profile.ieq_enabled else 'off'} "
+                  f"(amount={profile.ieq_amount}, curve={'yes' if profile.ieq_curve else 'no'})")
+            print(f"    PEQ filters:   {len(profile.peq_bands)} bands")
+            print(f"    MB compressor: {'on' if any(b.threshold != 0 for b in profile.mb_compressor) else 'off'}")
+            print(f"    Dialogue enh:  {profile.dialog_enhancer}")
+            print(f"    Volmax boost:  {profile.volmax_boost / 16.0:.1f} dB")
         else:
             print("  Warning: No endpoints found. Using built-in fallback.")
 
@@ -221,6 +234,7 @@ def _cmd_generate(args):
 
     ir_dir_str = str(ir_dir) if ir_dir else "~/.local/share/da4linux/ir"
 
+    sink = detect_hardware_sink()
     config = generate_pipewire_config(
         profile,
         device_info,
@@ -229,11 +243,18 @@ def _cmd_generate(args):
         stages=stages,
         mode=mode,
         hrir_path=hrir_path,
+        hardware_sink=sink,
     )
 
     output_file = output_dir / "50-da4linux.conf"
     write_config(config, str(output_file))
     print(f"\nConfig written to: {output_file}")
+    if sink:
+        print(f"  Audio sink: routed to hardware sink '{sink}'")
+    else:
+        print("  Warning: no hardware sink detected — config has no target.object.")
+        print("  Processed audio will not be routed to your speakers.")
+        print("  Install pulseaudio-utils (pactl) and re-run 'da4linux generate'.")
     print()
     print("To apply, restart PipeWire. The command depends on your init system:")
     print("  runit:     sv restart pipewire         (or killall -HUP pipewire)")
@@ -321,6 +342,309 @@ def _cmd_reenable_easyeffects(args):
         print("(DA4Linux renames configs with the .disabled-by-da4linux suffix)")
 
 
+def _runtime_dir() -> str:
+    """Return the PipeWire runtime dir (XDG_RUNTIME_DIR or /run/user/<uid>)."""
+    return os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+
+
+def _pgrep(name: str) -> bool:
+    """Return True if a process with the exact name is running."""
+    try:
+        return subprocess.run(["pgrep", "-x", name], capture_output=True).returncode == 0
+    except FileNotFoundError:
+        return False
+
+
+def _kill_and_wait(names, timeout: float = 5.0, sigkill: bool = False) -> bool:
+    """Kill processes by exact name (tolerating absence) and wait for exit."""
+    for name in names:
+        try:
+            cmd = ["pkill", "-x"]
+            if sigkill:
+                cmd.append("-9")
+            cmd.append(name)
+            subprocess.run(cmd, capture_output=True)
+        except FileNotFoundError:
+            pass
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(_pgrep(n) for n in names):
+            return True
+        time.sleep(0.1)
+    return not any(_pgrep(n) for n in names)
+
+
+def _wait_for_process(name: str, timeout: float) -> bool:
+    """Poll until a process with the exact name appears."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _pgrep(name):
+            return True
+        time.sleep(0.2)
+    return _pgrep(name)
+
+
+def _pid_alive(pid: int) -> bool:
+    """Return True if a process with the given PID is alive."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_for_pid(pid: int, timeout: float) -> bool:
+    """Poll until a process with the given PID is alive."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _pid_alive(pid):
+            return True
+        time.sleep(0.2)
+    return _pid_alive(pid)
+
+
+def _socket_accepts(path: str) -> bool:
+    """Return True if path is a Unix socket that accepts connections."""
+    try:
+        if not stat.S_ISSOCK(os.stat(path).st_mode):
+            return False
+    except OSError:
+        return False
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            return s.connect_ex(path) == 0
+    except OSError:
+        return False
+
+
+def _wait_for_socket(path: str, timeout: float) -> bool:
+    """Poll until a live Unix socket accepts connections at path.
+
+    A stale socket file left by a dead daemon is not enough: the path must
+    be a socket AND accept a connection (i.e. the daemon is bound).
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _socket_accepts(path):
+            return True
+        time.sleep(0.2)
+    return _socket_accepts(path)
+
+
+def _log_path(name: str) -> str:
+    """Log file for a daemon: XDG_RUNTIME_DIR if writable, else /tmp."""
+    base = _runtime_dir()
+    if not os.path.isdir(base):
+        base = "/tmp"
+    return os.path.join(base, f"da4linux-{name}.log")
+
+
+def _spawn(binary: str, log_path: str) -> subprocess.Popen:
+    """Start a daemon detached from the CLI so it survives exit."""
+    with open(log_path, "ab") as log:
+        return subprocess.Popen(
+            [binary],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+
+def _validate_runtime_dir(runtime: str) -> bool:
+    """Validate XDG_RUNTIME_DIR exists and is writable before touching processes."""
+    if not os.path.isdir(runtime):
+        print(f"  Error: runtime dir does not exist: {runtime}")
+        print("  XDG_RUNTIME_DIR is not set or points to a missing directory.")
+        print("  Set XDG_RUNTIME_DIR (e.g. export XDG_RUNTIME_DIR=/run/user/$(id -u))")
+        print("  and make sure /run/user/<uid> exists (created by your session).")
+        return False
+    if not os.access(runtime, os.W_OK):
+        print(f"  Error: runtime dir is not writable: {runtime}")
+        print("  Check permissions on XDG_RUNTIME_DIR (should be owned by you, mode 0700).")
+        return False
+    return True
+
+
+def _unlink_stale_sockets(runtime: str) -> None:
+    """Remove leftover socket files from dead daemons before starting new ones."""
+    for rel in ("pipewire-0", "pipewire-0-manager", os.path.join("pulse", "native")):
+        path = os.path.join(runtime, rel)
+        try:
+            if os.path.lexists(path):
+                os.unlink(path)
+                print(f"  Removed stale socket: {path}")
+        except OSError as e:
+            print(f"  Warning: could not remove stale socket {path}: {e}")
+
+
+def _service_dirs() -> list:
+    """Candidate runit service directories for pipewire, in priority order."""
+    xdg_config = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+        os.path.expanduser("~"), ".config"
+    )
+    return [
+        "/etc/service/pipewire",
+        "/etc/sv/pipewire",
+        os.path.join(os.path.expanduser("~"), ".config", "runit", "pipewire"),
+        os.path.join(xdg_config, "runit", "pipewire"),
+    ]
+
+
+def _is_supervised() -> bool:
+    """Return True if pipewire is supervised by runit."""
+    for d in _service_dirs():
+        if os.path.isdir(d):
+            return True
+    sv = shutil.which("sv")
+    if sv:
+        try:
+            r = subprocess.run([sv, "status", "pipewire"], capture_output=True)
+            if r.returncode == 0:
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _print_summary_and_exit(runtime, pw_socket, pulse_socket, pw_ok, wp_ok, pulse_ok, spawned):
+    """Print the final summary and exit PASS/FAIL (socket + process checks only)."""
+    pactl_ok = None
+    if shutil.which("pactl"):
+        try:
+            r = subprocess.run(["pactl", "info"], capture_output=True, text=True, timeout=10)
+            pactl_ok = r.returncode == 0
+        except subprocess.TimeoutExpired:
+            pactl_ok = False
+    else:
+        print("  Note: pactl not found, skipping end-to-end check.")
+
+    print()
+    print("=== Restart Summary ===")
+    print(f"  pipewire socket ({pw_socket}): {'PASS' if pw_ok else 'FAIL'}")
+    print(f"  wireplumber process:          {'PASS' if wp_ok else 'FAIL'}")
+    print(f"  pulse socket ({pulse_socket}): {'PASS' if pulse_ok else 'FAIL'}")
+    if pactl_ok is None:
+        print("  pactl info:                   UNVERIFIED (pactl not found)")
+    else:
+        print(f"  pactl info:                   {'PASS' if pactl_ok else 'FAIL'}")
+    if spawned:
+        print(f"  started by this command:      {', '.join(spawned)}")
+
+    if not (pw_ok and wp_ok and pulse_ok):
+        print()
+        print("  Some components failed to start. Check:")
+        print(f"    - XDG_RUNTIME_DIR is set and writable (currently: {runtime})")
+        print("    - Log files:")
+        for n in ("pipewire", "wireplumber", "pipewire-pulse"):
+            print(f"        {_log_path(n)}")
+        print("    - If you run under a session manager, start its pipewire")
+        print("      script instead (e.g. /usr/share/pipewire/pipewire.conf")
+        print("      or your session's autostart).")
+        sys.exit(1)
+
+
+def _restart_supervised(runtime: str, pw_socket: str, pulse_socket: str) -> None:
+    """Restart via runit's sv when pipewire is supervised (no pkill+spawn)."""
+    print("  PipeWire is supervised by runit; delegating to sv restart ...")
+    sv = shutil.which("sv")
+    try:
+        r = subprocess.run(
+            [sv, "restart", "pipewire", "pipewire-pulse", "wireplumber"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"  Error running sv restart: {e}")
+        sys.exit(1)
+    if r.returncode != 0:
+        print(f"  sv restart failed (exit {r.returncode}):")
+        if r.stderr:
+            print(r.stderr)
+        sys.exit(1)
+
+    pw_ok = _wait_for_socket(pw_socket, timeout=10.0)
+    pulse_ok = _wait_for_socket(pulse_socket, timeout=10.0)
+    wp_ok = _wait_for_process("wireplumber", timeout=5.0)
+    _print_summary_and_exit(runtime, pw_socket, pulse_socket, pw_ok, wp_ok, pulse_ok, {})
+
+
+def _cmd_restart_pipewire(args):
+    runtime = _runtime_dir()
+    pw_socket = os.path.join(runtime, "pipewire-0")
+    pulse_socket = os.path.join(runtime, "pulse", "native")
+
+    print("=== Restarting PipeWire (user session) ===")
+    print(f"  Runtime dir: {runtime}")
+
+    # If runit supervises pipewire, delegate to sv instead of pkill+spawn:
+    # pkill on a supervised service triggers runsv respawn, producing
+    # duplicate daemons fighting over the socket.
+    if _is_supervised():
+        _restart_supervised(runtime, pw_socket, pulse_socket)
+        return
+
+    missing = [b for b in ("pipewire", "wireplumber", "pipewire-pulse")
+               if not shutil.which(b)]
+    if missing:
+        print(f"  Error: not found in PATH: {', '.join(missing)}")
+        print("  Install PipeWire/WirePlumber (e.g. apt install pipewire wireplumber).")
+        sys.exit(1)
+
+    # Validate the runtime dir before touching any process.
+    if not _validate_runtime_dir(runtime):
+        sys.exit(2)
+
+    # Stop existing instances: pulse first, then wireplumber, then the main
+    # daemon (pipewire-pulse is a separate process on modern setups).
+    print("  Stopping pipewire-pulse, wireplumber, pipewire ...")
+    stopped = _kill_and_wait(("pipewire-pulse", "wireplumber", "pipewire"), timeout=5.0)
+    if not stopped:
+        print("  Warning: some processes still running after 5s; sending SIGKILL ...")
+        alive = [n for n in ("pipewire-pulse", "wireplumber", "pipewire") if _pgrep(n)]
+        if alive:
+            _kill_and_wait(alive, timeout=2.0, sigkill=True)
+
+    # Remove stale socket files left by dead daemons so the new pipewire can
+    # bind, and so the wait cannot pass on a dead socket.
+    _unlink_stale_sockets(runtime)
+
+    # Start the main daemon and wait for its socket.
+    print("  Starting pipewire ...")
+    spawned = {}
+    try:
+        spawned["pipewire"] = _spawn("pipewire", _log_path("pipewire"))
+    except OSError as e:
+        print(f"  Error starting pipewire: {e}")
+    pw_ok = _wait_for_socket(pw_socket, timeout=10.0)
+
+    # Start the session manager, then give it a moment.
+    print("  Starting wireplumber ...")
+    try:
+        spawned["wireplumber"] = _spawn("wireplumber", _log_path("wireplumber"))
+    except OSError as e:
+        print(f"  Error starting wireplumber: {e}")
+    time.sleep(1.0)
+
+    # Start PulseAudio compatibility and wait for its socket.
+    print("  Starting pipewire-pulse ...")
+    try:
+        spawned["pipewire-pulse"] = _spawn("pipewire-pulse", _log_path("pipewire-pulse"))
+    except OSError as e:
+        print(f"  Error starting pipewire-pulse: {e}")
+    pulse_ok = _wait_for_socket(pulse_socket, timeout=10.0)
+
+    # Final verification: use the PIDs we spawned, not pgrep-by-name (which
+    # can match stray instances).
+    if "wireplumber" in spawned:
+        wp_ok = _wait_for_pid(spawned["wireplumber"].pid, timeout=5.0)
+    else:
+        wp_ok = False
+
+    _print_summary_and_exit(runtime, pw_socket, pulse_socket, pw_ok, wp_ok, pulse_ok, spawned)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="da4linux",
@@ -397,6 +721,12 @@ def main():
         help="Restore EasyEffects PipeWire configs previously disabled by DA4Linux",
     )
 
+    # restart-pipewire
+    restart_parser = subparsers.add_parser(
+        "restart-pipewire",
+        help="Restart the PipeWire user session (pipewire, wireplumber, pipewire-pulse)",
+    )
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -410,6 +740,7 @@ def main():
         "status": _cmd_status,
         "disable-easyeffects": _cmd_disable_easyeffects,
         "reenable-easyeffects": _cmd_reenable_easyeffects,
+        "restart-pipewire": _cmd_restart_pipewire,
     }
 
     commands[args.command](args)

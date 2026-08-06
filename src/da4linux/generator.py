@@ -8,6 +8,9 @@ SPA-JSON format is NOT regular JSON: unquoted keys, no trailing commas,
 key=value separators, # comments.
 """
 
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -553,6 +556,32 @@ def generate_filter_graph(
     ir_right = str(ir_path / f"{profile_key}_R.wav")
     use_fir = bool(profile.ao_bands) and stages.get("fir", True)
 
+    # ── DAX3 XML profile-driven stage decisions ──────────────────────
+
+    has_ieq = profile.ieq_enabled and len(profile.ieq_curve) > 0
+    has_real_peq = len(profile.peq_bands) > 0 and any(b.freq > 0 for b in profile.peq_bands)
+    has_mb_comp = len(profile.mb_compressor) > 0 and any(b.threshold != 0 for b in profile.mb_compressor)
+
+    if not has_mb_comp:
+        stages["mb_compressor"] = False
+
+    # Generate IEQ FIR when IEQ data is available (MUST happen before path check)
+    if has_ieq:
+        from .ir_generator import generate_minimum_phase_fir, write_wav_ir, _HAS_NUMPY
+        if _HAS_NUMPY:
+            ieq_db = [v / 16.0 for v in profile.ieq_curve]
+            blend = profile.ieq_amount / 100.0
+            ieq_db_blended = [v * blend for v in ieq_db]
+
+            ieq_freqs = [47, 141, 234, 328, 469, 656, 844, 1031, 1313, 1688,
+                         2250, 3000, 3750, 4688, 5813, 7125, 9000, 11250, 13875, 19688]
+
+            ir = generate_minimum_phase_fir(ieq_db_blended, ieq_freqs)
+            write_wav_ir(ir, ir_left, 48000)
+            write_wav_ir(ir, ir_right, 48000)
+            use_fir = True
+
+    # NOW check if IR files exist (after IEQ generation may have created them)
     if not Path(ir_left).exists() and not Path(ir_right).exists():
         use_fir = False
 
@@ -560,8 +589,8 @@ def generate_filter_graph(
     ir_right_path = ir_right if use_fir else "/dirac"
 
     filters_str = _build_filters_string(profile.peq_bands)
-    volmax = profile.volmax_boost if profile.volmax_boost > 0 else 1.0
-    volmax_linear = pow(10.0, volmax / 20.0) if isinstance(volmax, float) else 1.0
+    volmax_db = profile.volmax_boost / 16.0 if profile.volmax_boost > 0 else 0.0
+    volmax_linear = pow(10.0, volmax_db / 20.0) if volmax_db > 0 else 1.0
 
     # ── Generate all stages ──────────────────────────────────────────
 
@@ -817,6 +846,119 @@ def generate_filter_graph(
 
 # ── Top-level config generator ──────────────────────────────────────────
 
+def _is_preferred_sink(name: str) -> bool:
+    """Return True for a built-in speaker/analog sink (not HDMI/Digital)."""
+    lower = name.lower()
+    if "hdmi" in lower or "digital" in lower:
+        return False
+    return "speaker" in lower or "analog" in lower
+
+
+def _get_default_sink(runner=None) -> Optional[str]:
+    """Return the default sink name via `pactl get-default-sink`."""
+    pactl = shutil.which("pactl")
+    if not pactl:
+        return None
+    try:
+        if runner is not None:
+            result = runner(["pactl", "get-default-sink"])
+        else:
+            result = subprocess.run(
+                [pactl, "get-default-sink"],
+                capture_output=True, text=True, timeout=10,
+            )
+        return result.stdout.strip() or None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def detect_hardware_sink(
+    pactl_output: Optional[str] = None,
+    runner=None,
+) -> Optional[str]:
+    """Detect the real hardware sink node name for the playback leg.
+
+    Preference order:
+      1. A built-in speaker/analog sink (name contains "Speaker"/"speaker"/
+         "analog", not "HDMI"/"Digital") from `pactl list sinks short`.
+      2. The default sink from `pactl get-default-sink`.
+      3. Any other alsa_output.* sink.
+      4. `pw-cli ls Node` fallback.
+
+    da4linux nodes are always excluded. `pactl_output` injects fake pactl
+    output (tests); `runner` injects a subprocess runner (tests).
+    """
+    real_mode = pactl_output is None
+    if pactl_output is None:
+        pactl = shutil.which("pactl")
+        if pactl:
+            try:
+                if runner is not None:
+                    result = runner(["pactl", "list", "sinks", "short"])
+                else:
+                    result = subprocess.run(
+                        [pactl, "list", "sinks", "short"],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                pactl_output = result.stdout
+            except (OSError, subprocess.TimeoutExpired):
+                pactl_output = None
+
+    sink_names = []
+    if pactl_output:
+        for line in pactl_output.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[1].startswith("alsa_output."):
+                if "da4linux" not in parts[1]:
+                    sink_names.append(parts[1])
+
+    # 1) Prefer a built-in speaker/analog sink over HDMI/Digital.
+    for name in sink_names:
+        if _is_preferred_sink(name):
+            return name
+
+    # 2) Fall back to the default sink.
+    if real_mode or runner is not None:
+        default_sink = _get_default_sink(runner)
+        if (
+            default_sink
+            and default_sink.startswith("alsa_output.")
+            and "da4linux" not in default_sink
+        ):
+            return default_sink
+
+    # 3) Any other alsa_output sink.
+    if sink_names:
+        return sink_names[0]
+
+    pw_cli = shutil.which("pw-cli")
+    if pw_cli:
+        try:
+            if runner is not None:
+                result = runner(["pw-cli", "ls", "Node"])
+            else:
+                result = subprocess.run(
+                    [pw_cli, "ls", "Node"],
+                    capture_output=True, text=True, timeout=10,
+                )
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("node.name = "):
+                    name = line.split("=", 1)[1].strip().strip('"')
+                    if name.startswith("alsa_output.") and "da4linux" not in name:
+                        return name
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    print(
+        "Warning: could not detect a hardware sink (pactl/pw-cli unavailable "
+        "or no alsa_output.* sink found); generating config without "
+        "target.object.",
+        file=sys.stderr,
+    )
+    return None
+
+
 def generate_pipewire_config(
     profile: DAX3Profile,
     device_info: DeviceInfo,
@@ -825,6 +967,8 @@ def generate_pipewire_config(
     stages: Optional[dict] = None,
     mode: str = "music",
     hrir_path: str = "",
+    hardware_sink: Optional[str] = None,
+    pactl_output: Optional[str] = None,
 ) -> str:
     """Generate a complete PipeWire SPA-JSON config from a DAX3 profile.
 
@@ -833,6 +977,9 @@ def generate_pipewire_config(
     if limiter_type is None:
         limiter_type = detect_available_limiter()
 
+    if hardware_sink is None:
+        hardware_sink = detect_hardware_sink(pactl_output=pactl_output)
+
     device_name = device_info.product_name or "DA4Linux"
     label = device_info.product_name.replace(" ", "_") if device_info.product_name else "DA4Linux"
 
@@ -840,6 +987,14 @@ def generate_pipewire_config(
         profile, device_info, ir_dir, limiter_type,
         stages=stages, mode=mode, hrir_path=hrir_path,
     )
+
+    playback_props = (
+        '                node.name = "effect_output.da4linux"\n'
+        '                node.passive = true\n'
+        '                node.description = "DA4Linux — Output"\n'
+    )
+    if hardware_sink:
+        playback_props += f'                target.object = "{hardware_sink}"\n'
 
     config = f"""# DA4Linux — PipeWire filter-chain config
 # Generated for: {device_name}
@@ -859,15 +1014,11 @@ context.modules = [
             capture.props = {{
                 node.name = "effect_input.da4linux"
                 media.class = Audio/Sink
-                priority.session = -1
+                priority.session = 900
                 node.description = "DA4Linux — Virtual Sink"
             }}
             playback.props = {{
-                node.name = "effect_output.da4linux"
-                media.class = Audio/Sink
-                node.passive = true
-                node.description = "DA4Linux — Output"
-            }}
+{playback_props}            }}
         }}
     }}
 ]

@@ -85,8 +85,14 @@ def _text(element, tag, default=""):
         return attr.strip()
     # Check child element
     child = element.find(tag)
-    if child is not None and child.text:
-        return child.text.strip()
+    if child is not None:
+        # New DAX3 format: <element value="123"/>
+        val = child.get("value")
+        if val is not None:
+            return val.strip()
+        # Old format: <element>text</element>
+        if child.text:
+            return child.text.strip()
     return default
 
 
@@ -139,12 +145,24 @@ def parse_peq_filters(element) -> list[PEQBand]:
         if not enabled:
             continue
         ftype = _int_elem(filt, "type", 1)
+        # Try f0 (new DAX3 format), fall back to freq
+        freq_val = _text(filt, "f0")
+        if not freq_val:
+            freq_val = _text(filt, "freq")
+        freq = float(freq_val) if freq_val else 0.0
+        # Gain defaults to 0.0 (crossover filters don't have gain)
+        gain = _float_elem(filt, "gain", 0.0)
+        # Try order (new DAX3 format), fall back to q
+        q_val = _text(filt, "order")
+        if not q_val:
+            q_val = _text(filt, "q")
+        q = float(q_val) if q_val else 0.707
         bands.append(
             PEQBand(
                 filter_type=PEQ_FILTER_TYPES.get(ftype, "bell"),
-                freq=_float_elem(filt, "freq"),
-                gain=_float_elem(filt, "gain"),
-                q=_float_elem(filt, "q", 0.707),
+                freq=freq,
+                gain=gain,
+                q=q,
                 enabled=True,
             )
         )
@@ -159,7 +177,34 @@ def parse_audio_optimizer(element) -> list[AudioOptimizerBand]:
 
     for child in ao_container:
         tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag.startswith("ch_") and child.text:
+        if not tag.startswith("ch_"):
+            continue
+
+        # New format: <ch_00 value="-240,-240,96,..."/>
+        val_attr = child.get("value")
+        if val_attr is not None:
+            gains = []
+            for v in val_attr.split(","):
+                try:
+                    gains.append(float(v.strip()))
+                except ValueError:
+                    gains.append(0.0)
+            bands.append(AudioOptimizerBand(gains=gains))
+            continue
+
+        # Preset format: <ch_00 preset="array_20_zero"/>
+        preset = child.get("preset")
+        if preset is not None:
+            if preset == "array_20_zero":
+                bands.append(AudioOptimizerBand(gains=[0.0] * 20))
+            elif preset == "array_20_n192":
+                bands.append(AudioOptimizerBand(gains=[-192.0] * 20))
+            else:
+                bands.append(AudioOptimizerBand(gains=[0.0] * 20))
+            continue
+
+        # Old format: <ch_00>0,0,0,...</ch_00>
+        if child.text:
             gains = []
             for val in child.text.strip().split(","):
                 try:
@@ -178,17 +223,44 @@ def parse_mb_compressor(element) -> list[MBCompressorBand]:
 
     for group in mb_container:
         tag = group.tag.split("}")[-1] if "}" in group.tag else group.tag
-        if tag.startswith("band_group_"):
+        if not tag.startswith("band_group_"):
+            continue
+
+        # New format: <band_group_0 value="20,0,32767,22641,27238,0"/>
+        val_attr = group.get("value")
+        if val_attr is not None:
+            int_vals = []
+            for p in val_attr.split(","):
+                try:
+                    int_vals.append(int(p.strip()))
+                except ValueError:
+                    int_vals.append(0)
+            while len(int_vals) < 6:
+                int_vals.append(0)
+            int_vals = int_vals[:6]
             bands.append(
                 MBCompressorBand(
-                    threshold=_float_elem(group, "threshold"),
-                    ratio=_float_elem(group, "ratio", 1.0),
-                    attack=_float_elem(group, "attack", 5.0),
-                    release=_float_elem(group, "release", 50.0),
-                    knee=_float_elem(group, "knee", 0.0),
-                    makeup_gain=_float_elem(group, "makeup_gain", 0.0),
+                    threshold=float(int_vals[0]),
+                    attack=float(int_vals[1]),
+                    ratio=float(int_vals[2]) / 32767.0 if int_vals[2] else 1.0,
+                    release=float(int_vals[3]),
+                    knee=float(int_vals[4]) / 32767.0 if int_vals[4] else 0.0,
+                    makeup_gain=float(int_vals[5]) / 32767.0 if int_vals[5] else 0.0,
                 )
             )
+            continue
+
+        # Old format: <band_group_0 threshold="-24" ratio="2.0" .../>
+        bands.append(
+            MBCompressorBand(
+                threshold=_float_elem(group, "threshold"),
+                ratio=_float_elem(group, "ratio", 1.0),
+                attack=_float_elem(group, "attack", 5.0),
+                release=_float_elem(group, "release", 50.0),
+                knee=_float_elem(group, "knee", 0.0),
+                makeup_gain=_float_elem(group, "makeup_gain", 0.0),
+            )
+        )
     return bands
 
 
@@ -213,7 +285,17 @@ def parse_constants(root) -> dict[str, object]:
 
     for child in const_elem:
         tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if child.text and child.text.strip():
+        # New format: <ieq_detailed target="150,142,188,..."/>
+        target = child.get("target")
+        if target is not None:
+            values = []
+            for v in target.split(","):
+                try:
+                    values.append(float(v.strip()))
+                except ValueError:
+                    values.append(v.strip())
+            constants[tag] = values
+        elif child.text and child.text.strip():
             text = child.text.strip()
             if "," in text:
                 values = []
@@ -228,6 +310,25 @@ def parse_constants(root) -> dict[str, object]:
                     constants[tag] = float(text)
                 except ValueError:
                     constants[tag] = text
+        else:
+            # Attribute-based constants (e.g., <band_20_freq fs_44100="43,129,..." fs_48000="47,141,..."/>)
+            attrib_values: dict[str, object] = {}
+            for attr_name, attr_val in child.attrib.items():
+                if "," in attr_val:
+                    vals = []
+                    for v in attr_val.split(","):
+                        try:
+                            vals.append(float(v.strip()))
+                        except ValueError:
+                            vals.append(v.strip())
+                    attrib_values[attr_name] = vals
+                else:
+                    try:
+                        attrib_values[attr_name] = float(attr_val)
+                    except ValueError:
+                        attrib_values[attr_name] = attr_val
+            if attrib_values:
+                constants[tag] = attrib_values
     return constants
 
 
@@ -246,26 +347,55 @@ def parse_crossover_frequencies(element) -> list[float]:
         tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
         if "split" in tag.lower() or "crossover" in tag.lower() or "cross" in tag.lower() or "xover" in tag.lower():
             try:
-                freqs.append(float(child.text.strip()))
+                val = child.get("value")
+                if val is not None:
+                    if "," in val:
+                        for v in val.split(","):
+                            try:
+                                freqs.append(float(v.strip()))
+                            except ValueError:
+                                pass
+                    else:
+                        freqs.append(float(val.strip()))
+                else:
+                    freqs.append(float(child.text.strip()))
             except (ValueError, TypeError, AttributeError):
                 pass
     return freqs
 
 
-def _parse_tuning_cp(cp_elem, profile: DAX3Profile) -> None:
+def _parse_tuning_cp(cp_elem, profile: DAX3Profile, constants: dict[str, object] | None = None) -> None:
     profile.ieq_enabled = _bool_elem(cp_elem, "ieq-enable", False)
     profile.ieq_amount = _float_elem(cp_elem, "ieq-amount", 0.0)
-    profile.dialog_enhancer = _float_elem(cp_elem, "dialog-enhancer", 0.0)
-    profile.volume_leveler = _float_elem(cp_elem, "volume-leveler", 0.0)
+    # Try new format tag first (dialog-enhancer-amount), fall back to old (dialog-enhancer)
+    profile.dialog_enhancer = _float_elem(cp_elem, "dialog-enhancer-amount")
+    if profile.dialog_enhancer == 0.0:
+        profile.dialog_enhancer = _float_elem(cp_elem, "dialog-enhancer", 0.0)
+    profile.volume_leveler = _float_elem(cp_elem, "volume-leveler-amount")
+    if profile.volume_leveler == 0.0:
+        profile.volume_leveler = _float_elem(cp_elem, "volume-leveler", 0.0)
     profile.surround_boost = _float_elem(cp_elem, "surround-boost", 0.0)
+    # volmax-boost may be in tuning-cp (new format) or tuning-vlldp (old format)
+    profile.volmax_boost = _float_elem(cp_elem, "volmax-boost", 0.0)
 
-    ieq_curve_text = _text(cp_elem, "ieq-curve") or _text(cp_elem, "ieq-gains")
-    if ieq_curve_text:
-        for val in ieq_curve_text.split(","):
-            try:
-                profile.ieq_curve.append(float(val.strip()))
-            except ValueError:
-                pass
+    # IEQ curve: resolve <ieq-bands-set preset="XXX"/> from constants
+    ieq_bands_set = cp_elem.find("ieq-bands-set")
+    if ieq_bands_set is not None:
+        preset_name = ieq_bands_set.get("preset")
+        if preset_name and constants and preset_name in constants:
+            curve = constants[preset_name]
+            if isinstance(curve, list):
+                profile.ieq_curve = [float(v) if isinstance(v, (int, float)) else 0.0 for v in curve]
+
+    # Fallback: old format inline ieq-curve/ieq-gains
+    if not profile.ieq_curve:
+        ieq_curve_text = _text(cp_elem, "ieq-curve") or _text(cp_elem, "ieq-gains")
+        if ieq_curve_text:
+            for val in ieq_curve_text.split(","):
+                try:
+                    profile.ieq_curve.append(float(val.strip()))
+                except ValueError:
+                    pass
 
 
 def _adjust_constant(name, label):
@@ -278,7 +408,10 @@ def _parse_tuning_vlldp(vlldp_elem, profile: DAX3Profile) -> None:
     profile.ao_bands = parse_audio_optimizer(vlldp_elem)
     profile.mb_compressor = parse_mb_compressor(vlldp_elem)
     profile.regulator = parse_regulator(vlldp_elem)
-    profile.volmax_boost = _float_elem(vlldp_elem, "volmax-boost", 0.0)
+    # volmax-boost from vlldp overrides tuning-cp value if present
+    volmax = _float_elem(vlldp_elem, "volmax-boost", 0.0)
+    if volmax != 0.0:
+        profile.volmax_boost = volmax
 
 
 def parse_dax3_xml(filepath: str) -> DAX3Tuning:
@@ -305,7 +438,7 @@ def parse_dax3_xml(filepath: str) -> DAX3Tuning:
 
             cp = profile_elem.find("tuning-cp")
             if cp is not None:
-                _parse_tuning_cp(cp, p)
+                _parse_tuning_cp(cp, p, tuning.constants)
 
             vlldp = profile_elem.find("tuning-vlldp")
             if vlldp is not None:

@@ -1,0 +1,8 @@
+#!/bin/sh
+# runit service for the PipeWire daemon (user session).
+# Copy to ~/.config/runit/pipewire/ (or /etc/runit/runsvdir/pipewire/)
+# and chmod +x this file.
+
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+exec /usr/bin/pipewire
