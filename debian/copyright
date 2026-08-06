@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: da4linux
-Source: https://github.com/da4linux/da4linux
+Source: https://github.com/menak02/DA4Linux
 
 Files: *
 Copyright: 2026 DA4Linux Project

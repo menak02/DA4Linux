@@ -325,7 +325,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog="da4linux",
         description="Dolby Audio-like processing for Linux via PipeWire filter-chain.",
-        epilog="GNU GPL v3. https://github.com/da4linux/da4linux",
+        epilog="GNU GPL v3. https://github.com/menak02/DA4Linux",
     )
     parser.add_argument("--version", action="version", version=f"da4linux {__version__}")
     subparsers = parser.add_subparsers(dest="command")

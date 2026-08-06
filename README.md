@@ -27,7 +27,7 @@ pip install da4linux
 ### Makefile (any Linux)
 
 ```bash
-git clone https://github.com/da4linux/da4linux
+git clone https://github.com/menak02/DA4Linux
 cd da4linux
 sudo make install
 ```
@@ -53,7 +53,7 @@ sudo apt install ./da4linux_0.1.0-1_all.deb
 ### From source (editable)
 
 ```bash
-git clone https://github.com/da4linux/da4linux
+git clone https://github.com/menak02/DA4Linux
 cd da4linux
 pip install -e .
 ```

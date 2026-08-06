@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: DA4Linux Project
 Build-Depends: debhelper-compat (= 13), dh-python, python3-setuptools, python3-all
 Standards-Version: 4.7.0
-Homepage: https://github.com/da4linux/da4linux
+Homepage: https://github.com/menak02/DA4Linux
 Rules-Requires-Root: no
 
 Package: da4linux
