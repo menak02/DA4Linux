@@ -1,0 +1,74 @@
+.TH DA4LINUX 1 "2026-08-06" "da4linux 0.1.0" "User Commands"
+.SH NAME
+da4linux \- Dolby Audio-like processing for Linux via PipeWire
+.SH SYNOPSIS
+.B da4linux
+\fI\,COMMAND\/\fR [\fI\,OPTIONS\/\fR]
+.SH DESCRIPTION
+DA4Linux generates PipeWire filter-chain configurations that apply
+professional-grade DSP processing to system audio output. It reads
+Dolby DAX3 XML tuning files (from Windows drivers) or uses built-in
+profiles to produce device-specific audio enhancement chains.
+.PP
+The processing runs entirely inside the PipeWire audio server.
+No persistent daemon is required.
+.SH COMMANDS
+.TP
+\fBdetect\fR
+Detect audio hardware and print device information.
+.TP
+\fBparse\fR \fIXML_FILE\fR
+Parse a DAX3 XML tuning file and display its contents.
+.TP
+\fBgenerate\fR
+Generate and install a PipeWire filter-chain config. This is the
+main command.
+.TP
+\fBstatus\fR
+Show current DA4Linux status and configuration.
+.SH GENERATE OPTIONS
+.TP
+\fB\-\-xml\fR \fIFILE\fR
+DAX3 XML tuning file path (uses built-in profile if omitted).
+.TP
+\fB\-\-output\fR \fIDIR\fR
+Output directory (default: ~/.config/pipewire/pipewire.conf.d).
+.TP
+\fB\-\-profile\fR \fIKEY\fR
+Profile name override.
+.TP
+\fB\-\-mode\fR \fIMODE\fR
+Processing mode: music, movie, or voice (default: music).
+.TP
+\fB\-\-stages\fR \fILIST\fR
+Comma-separated stages to enable.
+.TP
+\fB\-\-disable\fR \fILIST\fR
+Comma-separated stages to disable.
+.TP
+\fB\-\-hrir\fR \fIFILE\fR
+Path to SOFA HRTF file for virtual surround.
+.SH FILES
+.TP
+\fI~/.config/pipewire/pipewire.conf.d/50-da4linux.conf\fR
+Generated PipeWire filter-chain configuration.
+.TP
+\fI~/.local/share/da4linux/ir/\fR
+Impulse response WAV files for speaker correction.
+.TP
+\fI~/.local/share/da4linux/hrir/\fR
+SOFA HRTF files for virtual surround.
+.SH ENVIRONMENT
+.TP
+\fBDA4LINUX_HOME\fR
+Override the module installation directory.
+.SH EXIT STATUS
+0 on success, non-zero on error.
+.SH BUGS
+Report bugs at https://github.com/da4linux/da4linux/issues
+.SH LICENSE
+GNU General Public License v3.
+.SH SEE ALSO
+.BR pipewire (1),
+.BR pipewire.conf (5),
+.BR wireplumber (1)

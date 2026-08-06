@@ -1,0 +1,49 @@
+#!/bin/sh
+# DA4Linux launcher — finds modules and runs the Python CLI.
+# Works with Makefile install, pip install, and development layout.
+
+set -e
+
+find_source_dir() {
+    local script_dir
+    script_dir=$(cd "$(dirname "$0")" && pwd)
+
+    # 1. Development layout: running from repo root
+    if [ -f "$script_dir/../src/da4linux/cli.py" ]; then
+        echo "$script_dir/../src"
+        return 0
+    fi
+
+    # 2. Makefile install: /usr/share/da4linux or /usr/local/share/da4linux
+    for prefix in "$DA4LINUX_HOME" "/usr/share/da4linux" "/usr/local/share/da4linux"; do
+        if [ -f "$prefix/da4linux/cli.py" ]; then
+            echo "$prefix"
+            return 0
+        fi
+    done
+
+    # 3. pip install: use the installed package (try importing)
+    if python3 -c "import da4linux.cli" 2>/dev/null; then
+        echo "__pip__"
+        return 0
+    fi
+
+    echo "ERROR: Cannot find da4linux Python modules." >&2
+    echo "Set DA4LINUX_HOME or install via: pip install da4linux" >&2
+    exit 1
+}
+
+SRC_DIR=$(find_source_dir)
+
+if [ "$SRC_DIR" = "__pip__" ]; then
+    # pip-installed: just import directly
+    exec python3 -m da4linux.cli "$@"
+else
+    # Makefile or dev layout: add to sys.path
+    exec python3 -c "
+import sys, os
+sys.path.insert(0, '$SRC_DIR')
+from da4linux.cli import main
+main()
+" "$@"
+fi

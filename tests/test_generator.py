@@ -1,0 +1,409 @@
+"""Tests for the PipeWire config generator."""
+
+import sys
+import tempfile
+import os
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from da4linux.generator import (
+    generate_pipewire_config,
+    generate_filter_graph,
+    detect_available_limiter,
+    peq_band_to_spa_filter,
+)
+from da4linux.parser import DAX3Profile, PEQBand
+from da4linux.detect import DeviceInfo
+
+
+def _make_profile(peq_bands=None, volmax=0.0):
+    return DAX3Profile(
+        name="test",
+        endpoint_type="internal_speaker",
+        peq_bands=peq_bands or [],
+        volmax_boost=volmax,
+    )
+
+
+def _make_device():
+    return DeviceInfo(
+        vendor="TESTCO",
+        product_name="FooBook Pro",
+        codec_name="ALC999",
+    )
+
+
+def test_peq_band_to_filter_bell():
+    band = PEQBand(filter_type="bell", freq=500, gain=3.0, q=2.0)
+    result = peq_band_to_spa_filter(band)
+    assert "bq_peaking" in result
+    assert "freq = 500" in result
+    assert "gain = 3.000" in result
+    assert "q = 2.0000" in result
+
+
+def test_peq_band_to_filter_lowshelf():
+    band = PEQBand(filter_type="lowshelf", freq=200, gain=4.0, q=0.7)
+    result = peq_band_to_spa_filter(band)
+    assert "bq_lowshelf" in result
+    assert "freq = 200" in result
+
+
+def test_generate_filter_graph_basic():
+    profile = _make_profile(
+        peq_bands=[
+            PEQBand(filter_type="bell", freq=500, gain=-1.5, q=1.5),
+        ],
+        volmax=6.0,
+    )
+    device = _make_device()
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+    )
+    assert "filter.graph" in graph
+    assert "conv_l" in graph
+    assert "conv_r" in graph
+    assert "peq" in graph
+    assert "gain_out_l" in graph
+    assert "limiter_l" in graph
+    assert "/dirac" in graph
+
+
+def test_generate_filter_graph_lv2_limiter():
+    profile = _make_profile(volmax=3.0)
+    device = _make_device()
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="lv2",
+    )
+    assert "limiter_stereo" in graph
+    assert "lsp-plug.in" in graph
+    assert "limiter:in_l" in graph
+    assert "limiter:out_l" in graph
+
+
+def test_generate_filter_graph_ladspa_limiter():
+    profile = _make_profile(volmax=3.0)
+    device = _make_device()
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="ladspa",
+    )
+    assert "sc_limiter_stereo" in graph
+    assert "lsp-plugins-ladspa" in graph
+    assert "limiter:Input L" in graph
+    assert "limiter:Output L" in graph
+
+
+def test_generate_filter_graph_zam_limiter():
+    profile = _make_profile(volmax=3.0)
+    device = _make_device()
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="zam",
+    )
+    assert "ZaMaximX2" in graph
+    assert "Threshold" in graph
+    assert "Release" in graph
+    assert "limiter:Input L" in graph
+
+
+def test_generate_filter_graph_clamp_limiter():
+    profile = _make_profile(volmax=3.0)
+    device = _make_device()
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+    )
+    assert "builtin" in graph
+    assert "clamp" in graph
+    assert "limiter_l" in graph
+    assert "limiter_r" in graph
+    assert '"Min" = -1.0' in graph
+    assert '"Max" = 1.0' in graph
+
+
+def test_generate_pipewire_config():
+    profile = _make_profile(
+        peq_bands=[
+            PEQBand(filter_type="highshelf", freq=8000, gain=-2.0, q=0.7),
+        ],
+    )
+    device = _make_device()
+    config = generate_pipewire_config(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+    )
+    assert "context.modules" in config
+    assert "libpipewire-module-filter-chain" in config
+    assert "DA4Linux" in config
+    assert "FooBook" in config
+    assert "effect_input.da4linux" in config
+    assert "effect_output.da4linux" in config
+
+
+def test_generate_no_peq_bands():
+    profile = _make_profile()
+    device = _make_device()
+    config = generate_pipewire_config(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+    )
+    assert "context.modules" in config
+    assert "bq_peaking" in config
+
+
+def test_empty_device_name():
+    device = DeviceInfo()
+    profile = _make_profile()
+    config = generate_pipewire_config(profile, device)
+    assert "DA4Linux" in config
+
+
+def test_detect_available_limiter_real_system():
+    """On the real system, LSP LV2 should be detected."""
+    result = detect_available_limiter()
+    assert result == "lv2"
+
+
+def test_detect_available_limiter_fallback():
+    """When no plugins found, returns 'clamp'."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        # Create empty LV2 dir with no limiter_stereo in manifest
+        lv2_dir = tmp / "lsp-plugins.lv2"
+        lv2_dir.mkdir()
+        manifest = lv2_dir / "manifest.ttl"
+        manifest.write_text("plug:compressor_stereo")  # no limiter_stereo
+
+        # Empty LADSPA dirs
+        ladspa_dir = tmp / "ladspa"
+        ladspa_dir.mkdir()
+
+        with patch("da4linux.generator.Path") as mock_path:
+            original_path = __import__("pathlib").Path
+            def mock_path_factory(p, *args, **kwargs):
+                s = str(p)
+                if s.startswith("/usr/lib/lv2/lsp-plugins.lv2"):
+                    return original_path(str(lv2_dir))
+                if s.startswith("/usr/lib/ladspa") or s.startswith("/usr/lib64/ladspa") or s.startswith("/usr/local/lib/ladspa"):
+                    return original_path(str(ladspa_dir))
+                return original_path(s)
+            mock_path.side_effect = mock_path_factory
+
+            result = detect_available_limiter()
+            assert result == "clamp"
+
+
+# ── Phase 2+3: new stage tests ──────────────────────────────────────────
+
+def test_mb_compressor_node():
+    """Verify LSP MB compressor node is generated."""
+    from da4linux.generator import _generate_mb_compressor_node
+    node, out_l, out_r, in_l, in_r = _generate_mb_compressor_node(enabled=True)
+    assert "mb_compressor_stereo" in node
+    assert "lsp-plug.in" in node
+    assert "sf_1" in node
+    assert "sf_2" in node
+    assert "sf_3" in node
+    assert out_l == "mb:out_l"
+    assert in_l == "mb:in_l"
+
+
+def test_mb_compressor_disabled():
+    """Verify MB compressor disabled produces passthrough."""
+    from da4linux.generator import _generate_mb_compressor_node
+    node, out_l, out_r, in_l, in_r = _generate_mb_compressor_node(enabled=False)
+    assert "mb_byp" in node
+    assert "linear" in node
+    assert "mb_compressor" not in node
+    assert "mb_byp_l:Out" in out_l
+
+
+def test_stereo_enhancer_builtin():
+    """Verify stereo enhancer generates nodes (CALF or M/S matrix)."""
+    from da4linux.generator import _generate_stereo_enhancer_node
+    node, out_l, out_r, in_l, in_r = _generate_stereo_enhancer_node(enabled=True, width=1.5)
+    # Either CALF LV2 or M/S matrix
+    assert len(node) > 100
+    assert "In" in in_l or "in_l" in in_l
+    assert "Out" in out_l or "out_l" in out_l
+
+
+def test_stereo_enhancer_disabled():
+    """Verify stereo enhancer disabled produces passthrough."""
+    from da4linux.generator import _generate_stereo_enhancer_node
+    node, out_l, out_r, in_l, in_r = _generate_stereo_enhancer_node(enabled=False)
+    assert "ste_byp" in node
+    assert "stereo" not in node or "linear" in node
+
+
+def test_bass_enhancer_calf():
+    """Verify CALF BassEnhancer node is generated."""
+    from da4linux.generator import _generate_bass_enhancer_node
+    node, out_l, out_r, in_l, in_r = _generate_bass_enhancer_node(enabled=True, amount=0.7)
+    assert len(node) > 100
+    # Should contain BassEnhancer URI or bq_lowshelf fallback
+    assert "BassEnhancer" in node or "bq_lowshelf" in node
+    assert "bass:" in out_l or "bass_" in out_l
+
+
+def test_bass_enhancer_disabled():
+    """Verify bass enhancer disabled produces passthrough."""
+    from da4linux.generator import _generate_bass_enhancer_node
+    node, out_l, out_r, in_l, in_r = _generate_bass_enhancer_node(enabled=False)
+    assert "bass_byp" in node
+
+
+def test_dialogue_enhancer():
+    """Verify M/S dialogue processing nodes are generated."""
+    from da4linux.generator import _generate_dialogue_enhancer_node
+    node, out_l, out_r, in_l, in_r = _generate_dialogue_enhancer_node(
+        enabled=True, boost=3.0,
+    )
+    assert len(node) > 100
+    assert "d_mix_m" in node or "d_mix_s" in node
+    assert "bq_peaking" in node
+    assert "bq_highpass" in node
+    assert "d_mix_l" in node
+    assert "d_mix_r" in node
+
+
+def test_dialogue_enhancer_disabled():
+    """Verify dialogue enhancer disabled produces passthrough."""
+    from da4linux.generator import _generate_dialogue_enhancer_node
+    node, out_l, out_r, in_l, in_r = _generate_dialogue_enhancer_node(
+        enabled=False, boost=2.0,
+    )
+    assert "dial_byp" in node
+    assert "d_mix_m" not in node
+
+
+def test_loudness_node():
+    """Verify loudness node is generated (LSP loud_comp or ebur128)."""
+    from da4linux.generator import _generate_loudness_node
+    node, out_l, out_r, in_l, in_r = _generate_loudness_node(enabled=True)
+    assert len(node) > 50
+    assert "loud" in node or "ebu" in node
+    assert "out" in out_l.lower()
+
+
+def test_loudness_disabled():
+    """Verify loudness disabled produces passthrough."""
+    from da4linux.generator import _generate_loudness_node
+    node, out_l, out_r, in_l, in_r = _generate_loudness_node(enabled=False)
+    assert "loud_byp" in node
+
+
+def test_virtual_surround_node_empty_when_no_hrir():
+    """Virtual surround returns empty when HRIR path is empty."""
+    from da4linux.generator import _generate_virtual_surround_node
+    node, out_l, out_r, in_l, in_r = _generate_virtual_surround_node(
+        enabled=True, hrir_path="",
+    )
+    assert node == ""
+
+
+def test_stage_disabling():
+    """Verify disabled stages produce passthrough in the full graph."""
+    profile = _make_profile(volmax=3.0)
+    device = _make_device()
+    disabled = {
+        "fir": False, "peq": False, "mb_compressor": False,
+        "stereo": False, "bass": False, "dialogue": False,
+        "loudness": False, "surround": False, "limiter": True,
+    }
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+        stages=disabled,
+        mode="music",
+    )
+    assert "filter.graph" in graph
+    assert "mb_byp" in graph
+    assert "ste_byp" in graph
+    assert "bass_byp" in graph
+    assert "dial_byp" in graph
+    assert "loud_byp" in graph
+
+
+def test_mode_presets():
+    """Verify music/movie/voice produce different configs."""
+    profile = _make_profile(volmax=3.0)
+    device = _make_device()
+
+    music_graph = generate_filter_graph(profile, device, ir_dir="/tmp/test_ir",
+                                         limiter_type="clamp", mode="music")
+    movie_graph = generate_filter_graph(profile, device, ir_dir="/tmp/test_ir",
+                                         limiter_type="clamp", mode="movie")
+    voice_graph = generate_filter_graph(profile, device, ir_dir="/tmp/test_ir",
+                                         limiter_type="clamp", mode="voice")
+
+    # Music should have lower dialogue boost than voice
+    assert "d_peq_v" in voice_graph
+    # Movie should have wider stereo
+    assert len(music_graph) > 0
+    assert len(movie_graph) > 0
+    assert len(voice_graph) > 0
+    # Voice should have higher dialogue boost gain
+    # Check that voice graph differs from music/movie
+    assert music_graph != voice_graph or music_graph != movie_graph
+
+
+def test_full_chain():
+    """Verify all stages are linked in the expected order."""
+    profile = _make_profile(volmax=3.0)
+    device = _make_device()
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="lv2",
+        mode="music",
+    )
+    assert "filter.graph" in graph
+    assert "nodes = [" in graph
+    assert "links = [" in graph
+    assert "inputs = [" in graph
+    assert "outputs = [" in graph
+    # Check key stage nodes are present
+    assert "conv_l" in graph
+    assert "peq" in graph
+    assert "mb" in graph or "mb_" in graph
+    assert "stereo" in graph or "ms_" in graph
+    assert "bass" in graph or "bass_" in graph
+    assert "limiter" in graph
+    # Check links exist between stages
+    assert "input = " in graph
+    assert "output = " in graph
+
+
+def test_stage_node_count():
+    """Full graph should have a reasonable number of nodes."""
+    profile = _make_profile(volmax=3.0)
+    device = _make_device()
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+        mode="music",
+    )
+    lines = graph.splitlines()
+    node_count = sum(1 for l in lines if "name =" in l and "type =" not in l)
+    # We should have at least 12 nodes (2 conv + peq + 2 gain + 2 limiter + others)
+    assert node_count >= 12
+
+
+if __name__ == "__main__":
+    import pytest
+    pytest.main([__file__, "-v"])

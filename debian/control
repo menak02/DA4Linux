@@ -1,0 +1,27 @@
+Source: da4linux
+Section: sound
+Priority: optional
+Maintainer: DA4Linux Project
+Build-Depends: debhelper-compat (= 13), dh-python, python3-setuptools, python3-all
+Standards-Version: 4.7.0
+Homepage: https://github.com/da4linux/da4linux
+Rules-Requires-Root: no
+
+Package: da4linux
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}, pipewire (>= 1.0)
+Recommends: wireplumber, lsp-plugins-lv2, calf-plugins
+Suggests: libmysofa-utils
+Description: Dolby Audio-like processing for Linux via PipeWire filter-chain
+ DA4Linux generates PipeWire filter-chain configurations to enhance
+ laptop speaker audio quality using the same DSP techniques found
+ in vendor-supplied audio drivers.
+ .
+ It reads Dolby DAX3 XML tuning files from Windows drivers and produces
+ PipeWire-native processing chains with: FIR speaker correction,
+ parametric EQ, multiband compression, stereo enhancement, bass
+ enhancement, dialogue enhancement, loudness compensation, virtual
+ surround, and speaker protection limiting.
+ .
+ No persistent daemon required — processing runs inside PipeWire.
+ Works on any Linux desktop with PipeWire >= 1.0.

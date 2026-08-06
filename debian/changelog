@@ -1,0 +1,10 @@
+da4linux (0.1.0-1) unstable; urgency=medium
+
+  * Initial release.
+  * 10-stage DSP pipeline: FIR, PEQ, MB compressor, stereo enhancer,
+    bass enhancer, dialogue enhancer, loudness compensation, virtual
+    surround, output gain, limiter.
+  * Supports Lenovo ThinkPad T14s Gen 2i (Realtek ALC257) with built-in
+    profile. Extensible to any laptop via DAX3 XML tuning files.
+
+ -- DA4Linux Project  Thu, 06 Aug 2026 00:00:00 +0000
