@@ -2,7 +2,7 @@ Source: da4linux
 Section: sound
 Priority: optional
 Maintainer: DA4Linux Project <da4linux@proton.me>
-Build-Depends: debhelper-compat (= 13), dh-python, python3-setuptools, python3-all
+Build-Depends: debhelper-compat (= 13), dh-python, python3-setuptools, python3-all, pybuild-plugin-pyproject
 Standards-Version: 4.7.0
 Homepage: https://github.com/menak02/DA4Linux
 Rules-Requires-Root: no
