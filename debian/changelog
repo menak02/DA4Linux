@@ -7,4 +7,4 @@ da4linux (0.1.0-1) unstable; urgency=medium
   * Supports Lenovo ThinkPad T14s Gen 2i (Realtek ALC257) with built-in
     profile. Extensible to any laptop via DAX3 XML tuning files.
 
- -- DA4Linux Project  Thu, 06 Aug 2026 00:00:00 +0000
+ -- DA4Linux Project <da4linux@proton.me>  Thu, 06 Aug 2026 00:00:00 +0000

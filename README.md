@@ -18,13 +18,23 @@ coupling.
 
 ## Installation
 
-### pip (recommended)
+The Python package is installed with pip; the Makefile installs the
+launcher and integration files (man page, XDG autostart entry, runit
+templates) and works on any Linux distribution.
+
+### 1. Install the Python package
 
 ```bash
-pip install da4linux
+python3 -m pip install .          # system-wide
 ```
 
-### Makefile (any Linux)
+or into your user environment (no root):
+
+```bash
+python3 -m pip install --user .
+```
+
+### 2. System-wide install (sudo)
 
 ```bash
 git clone https://github.com/menak02/DA4Linux
@@ -38,13 +48,35 @@ Custom prefix:
 sudo make install PREFIX=/usr
 ```
 
-Staging install for packaging:
+Staging install for packaging (never touches the live system):
 
 ```bash
 make install DESTDIR=/tmp/staging PREFIX=/usr
 ```
 
-### Debian/Devuan .deb
+### Per-user install (no root)
+
+Installs the autostart entry to `~/.config/autostart/` and the runit
+templates to `~/.config/runit/`:
+
+```bash
+make install-user
+```
+
+If your launcher lives outside the default prefix, point the autostart
+entry at it:
+
+```bash
+make install-user PREFIX=$HOME/.local
+```
+
+### Uninstall
+
+```bash
+sudo make uninstall
+```
+
+### Debian/Devuan .deb (alternative)
 
 ```bash
 sudo apt install ./da4linux_0.1.0-1_all.deb
@@ -55,7 +87,7 @@ sudo apt install ./da4linux_0.1.0-1_all.deb
 ```bash
 git clone https://github.com/menak02/DA4Linux
 cd da4linux
-pip install -e .
+python3 -m pip install -e .
 ```
 
 ## Auto-Start on Login

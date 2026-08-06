@@ -5,6 +5,14 @@
 
 override_dh_auto_install:
 	dh_auto_install
-	# Install XDG autostart
+	# XDG autostart entry (PREFIX substituted for the Debian /usr layout)
 	mkdir -p debian/da4linux/etc/xdg/autostart
-	cp install/da4linux-autostart.desktop debian/da4linux/etc/xdg/autostart/
+	sed 's|@PREFIX@|/usr|' install/da4linux-autostart.desktop \
+		> debian/da4linux/etc/xdg/autostart/da4linux-autostart.desktop
+	# Man page
+	mkdir -p debian/da4linux/usr/share/man/man1
+	install -m 644 docs/da4linux.1 debian/da4linux/usr/share/man/man1/
+	# runit templates (reference copies)
+	mkdir -p debian/da4linux/usr/share/da4linux/runit
+	cp -r runit/pipewire runit/pipewire-pulse runit/wireplumber \
+		debian/da4linux/usr/share/da4linux/runit/
