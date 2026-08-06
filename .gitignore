@@ -34,3 +34,6 @@ Thumbs.db
 
 # Temporary test output
 /tmp/
+
+# pybuild build artifacts
+.pybuild/

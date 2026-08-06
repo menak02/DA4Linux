@@ -3,6 +3,9 @@
 %:
 	dh $@ --buildsystem=pybuild
 
+override_dh_auto_test:
+	dh_auto_test --buildsystem=pybuild -- --test-pytest
+
 override_dh_auto_install:
 	dh_auto_install
 	# XDG autostart entry (PREFIX substituted for the Debian /usr layout)

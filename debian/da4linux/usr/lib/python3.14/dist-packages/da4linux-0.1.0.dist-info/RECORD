@@ -1,0 +1,16 @@
+../scripts/da4linux,sha256=7JcIldflvoer0wi3V3NhnRDnMjgJRn8MYGljD64MiIE,211
+da4linux-0.1.0.dist-info/METADATA,sha256=30hpVcJ_hpUjkG73teQZwe4sxiYH_IOfszv8rvhNXXc,6909
+da4linux-0.1.0.dist-info/RECORD,,
+da4linux-0.1.0.dist-info/WHEEL,sha256=lTU6B6eIfYoiQJTZNc-fyaR6BpL6ehTzU3xGYxn2n8k,91
+da4linux-0.1.0.dist-info/entry_points.txt,sha256=n8asylQnQL5jBhFworLk97Emq30c8hdz4w8jH0tIOu8,47
+da4linux-0.1.0.dist-info/licenses/LICENSE,sha256=AMIdMH90LvE82x7mTfbt-nvn3A7J3hY8LzbBVlrlE4A,35068
+da4linux-0.1.0.dist-info/top_level.txt,sha256=gqKPyfjei90yBFV27dE_eCmo8m9ospKgR_jj8AHsFRg,9
+da4linux/__init__.py,sha256=QSiZYdyy8hhkNS6AqMwDYuUSovlyXvbJxAksr0Z2hAw,107
+da4linux/cli.py,sha256=yY14Tj-6UaJ1_LC2NWIlqdVmmMCaiU4k9mXFUO305nU,27467
+da4linux/constants.py,sha256=0G0rtBGBSoevJytEC-mTbVj020_LecwOmZOaNdjFYPE,5200
+da4linux/detect.py,sha256=Ob_1E5xgPMudHd9n6kg1tftGo_t0-Ow8HaLg3Wva4x0,7007
+da4linux/generator.py,sha256=cA0sIaBpLOWyNHL9Xzimd4KoDNSbD-OFM8me0eexgcQ,42391
+da4linux/ir_generator.py,sha256=YcErX-RstFt2b1XFtZYxeyVbUKTcpneX_B-o1aceYjI,5341
+da4linux/parser.py,sha256=xvfEZXgBUHDDBGhWdVGGV5HsVaxXWZJRWjNyGLEmmtE,15798
+da4linux/plugin_db.py,sha256=c9YPy0mJ4s0D9LQHL6bhdJpK2MJ8qF0uJZWk9779UfU,5272
+da4linux/profiles/__init__.py,sha256=1CH64aKaME-mqgmawfZyNrkUsvfvAPuhcgWSiiTrzQM,3465

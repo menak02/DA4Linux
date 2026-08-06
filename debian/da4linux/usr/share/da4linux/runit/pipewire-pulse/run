@@ -1,0 +1,17 @@
+#!/bin/sh
+# runit service for pipewire-pulse (PulseAudio compatibility).
+# Depends on the main pipewire daemon; waits for its socket before exec
+# to avoid the "Host is down" race when runit starts services in parallel.
+
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+# Wait up to ~10s for the main pipewire daemon: the socket must exist AND
+# pipewire must be running (a stale socket from a dead daemon is not enough).
+i=0
+while [ ! -S "$XDG_RUNTIME_DIR/pipewire-0" ] || ! pgrep -x pipewire >/dev/null 2>&1; do
+    i=$((i + 1))
+    [ "$i" -ge 10 ] && break
+    sleep 1
+done
+
+exec /usr/bin/pipewire-pulse

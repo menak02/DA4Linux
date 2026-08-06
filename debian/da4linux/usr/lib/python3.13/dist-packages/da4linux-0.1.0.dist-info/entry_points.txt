@@ -1,0 +1,2 @@
+[console_scripts]
+da4linux = da4linux.cli:main

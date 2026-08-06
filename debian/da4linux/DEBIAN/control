@@ -1,17 +1,14 @@
-Source: da4linux
-Section: sound
-Priority: optional
-Maintainer: DA4Linux Project <da4linux@proton.me>
-Build-Depends: debhelper-compat (= 13), dh-python, python3-setuptools, python3-all, pybuild-plugin-pyproject, python3-pytest
-Standards-Version: 4.7.0
-Homepage: https://github.com/menak02/DA4Linux
-Rules-Requires-Root: no
-
 Package: da4linux
+Version: 0.1.0-1
 Architecture: all
-Depends: ${misc:Depends}, ${python3:Depends}, pipewire (>= 1.0)
+Maintainer: DA4Linux Project <da4linux@proton.me>
+Installed-Size: 643
+Depends: pipewire (>= 1.0)
 Recommends: wireplumber, lsp-plugins-lv2, calf-plugins
 Suggests: libmysofa-utils
+Section: sound
+Priority: optional
+Homepage: https://github.com/menak02/DA4Linux
 Description: Dolby Audio-like processing for Linux via PipeWire filter-chain
  DA4Linux generates PipeWire filter-chain configurations to enhance
  laptop speaker audio quality using the same DSP techniques found
