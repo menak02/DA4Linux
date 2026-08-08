@@ -76,9 +76,6 @@ class DAX3Tuning:
     constants: dict[str, object] = field(default_factory=dict)
 
 
-# — Parsing helpers —
-
-
 def _local_tag(element) -> str:
     if element is None or not hasattr(element, "tag"):
         return ""
@@ -165,9 +162,6 @@ def _bool_elem(element, tag, default=False):
 def _find_all_elements(element, tag):
     """Find child elements with given tag, ignoring namespace."""
     return _find_all_children(element, tag)
-
-
-# — Public parsing functions —
 
 
 def parse_peq_filters(element) -> list[PEQBand]:

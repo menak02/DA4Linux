@@ -126,8 +126,6 @@ def _generate_convolver_nodes(
                     }}"""
 
 
-# ── Stage generators ────────────────────────────────────────────────────
-
 def _generate_mb_compressor_node(
     enabled: bool = True,
     comp_ratio: float = 2.0,
@@ -613,8 +611,6 @@ def generate_filter_graph(
     ir_right = str(ir_path / f"{profile_key}_R.wav")
     use_fir = bool(profile.ao_bands) and stages.get("fir", True)
 
-    # ── DAX3 XML profile-driven stage decisions ──────────────────────
-
     has_ieq = profile.ieq_enabled and len(profile.ieq_curve) > 0
     has_real_peq = len(profile.peq_bands) > 0 and any(b.freq > 0 for b in profile.peq_bands)
     has_mb_comp = len(profile.mb_compressor) > 0 and any(b.threshold != 0 for b in profile.mb_compressor)
@@ -659,9 +655,6 @@ def generate_filter_graph(
     net_volmax_db = max(0.0, volmax_db - headroom_attenuation)
     volmax_linear = pow(10.0, net_volmax_db / 20.0) if net_volmax_db > 0 else 1.0
 
-    # ── Generate all stages ──────────────────────────────────────────
-
-    # Stage 1: Convolver
     if use_fir:
         conv_nodes = _generate_convolver_nodes(ir_left, ir_right)
         conv_out_l, conv_out_r = "conv_l:Out", "conv_r:Out"
@@ -672,7 +665,6 @@ def generate_filter_graph(
         conv_out_l = conv_out_r = conv_in_l = conv_in_r = ""
         graph_in_l, graph_in_r = "peq:In 1", "peq:In 2"
 
-    # Stage 2: PEQ
     peq_node = f"""                    {{
                         type = builtin
                         name = peq
@@ -686,37 +678,31 @@ def generate_filter_graph(
     peq_out_l, peq_out_r = "peq:Out 1", "peq:Out 2"
     peq_in_l, peq_in_r = "peq:In 1", "peq:In 2"
 
-    # Stage 3: MB Compressor
     mb_enabled = stages.get("mb_compressor", True)
     mb_node, mb_out_l, mb_out_r, mb_in_l, mb_in_r = _generate_mb_compressor_node(
         enabled=mb_enabled, comp_ratio=comp_ratio, crossover_freqs=profile.crossover_freqs,
     )
 
-    # Stage 4: Stereo enhancer
     ste_enabled = stages.get("stereo", True)
     ste_node, ste_out_l, ste_out_r, ste_in_l, ste_in_r = _generate_stereo_enhancer_node(
         enabled=ste_enabled, width=stereo_width,
     )
 
-    # Stage 5: Bass enhancer
     bass_enabled = stages.get("bass", True)
     bass_node, bass_out_l, bass_out_r, bass_in_l, bass_in_r = _generate_bass_enhancer_node(
         enabled=bass_enabled, amount=bass_amount,
     )
 
-    # Stage 6: Dialogue enhancer
     dial_enabled = stages.get("dialogue", True)
     dial_node, dial_out_l, dial_out_r, dial_in_l, dial_in_r = _generate_dialogue_enhancer_node(
         enabled=dial_enabled, boost=dialogue_boost,
     )
 
-    # Stage 7: Loudness
     loud_enabled = stages.get("loudness", True)
     loud_node, loud_out_l, loud_out_r, loud_in_l, loud_in_r = _generate_loudness_node(
         enabled=loud_enabled,
     )
 
-    # Stage 8: Virtual surround
     if surround_enabled and hrir_path:
         sur_node, sur_out_l, sur_out_r, sur_in_l, sur_in_r = _generate_virtual_surround_node(
             enabled=True, hrir_path=hrir_path,
@@ -724,7 +710,6 @@ def generate_filter_graph(
     else:
         sur_node, sur_out_l, sur_out_r, sur_in_l, sur_in_r = "", "", "", "", ""
 
-    # Stage 9: Output gain
     gain_node = f"""                    {{
                         type = builtin
                         name = gain_out_l
@@ -740,7 +725,6 @@ def generate_filter_graph(
     gain_out_l, gain_out_r = "gain_out_l:Out", "gain_out_r:Out"
     gain_in_l, gain_in_r = "gain_out_l:In", "gain_out_r:In"
 
-    # Stage 10: Limiter
     if limiter_type == "lv2":
         lim_node = """                    {
                         type = lv2
@@ -809,8 +793,6 @@ def generate_filter_graph(
         lim_in_l, lim_in_r = "limiter_l:In", "limiter_r:In"
         lim_out_l, lim_out_r = "limiter_l:Out", "limiter_r:Out"
 
-    # ── Build nodes list ─────────────────────────────────────────────
-
     all_nodes = [conv_nodes, peq_node, mb_node, ste_node, bass_node,
                  dial_node, loud_node, sur_node, gain_node, lim_node]
     nodes_body = ""
@@ -819,8 +801,6 @@ def generate_filter_graph(
             if nodes_body:
                 nodes_body += "\n"
             nodes_body += n
-
-    # ── Build links list ─────────────────────────────────────────────
 
     links = []
     # Conv → PEQ (only if FIR convolver is active)
@@ -918,8 +898,6 @@ def generate_filter_graph(
                 outputs = [ "{lim_out_l}" "{lim_out_r}" ]
             }}"""
 
-
-# ── Top-level config generator ──────────────────────────────────────────
 
 def _is_preferred_sink(name: str) -> bool:
     """Return True for a built-in speaker/analog sink (not HDMI/Digital)."""
@@ -1100,8 +1078,6 @@ context.modules = [
 """
     return config
 
-
-# ── Limiter detection ───────────────────────────────────────────────────
 
 def detect_available_limiter() -> str:
     """Detect the best available limiter plugin for PipeWire filter-chain.
