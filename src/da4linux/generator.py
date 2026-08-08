@@ -1119,8 +1119,18 @@ def detect_available_limiter() -> str:
 
 
 
+def verify_spa_json_syntax(config_text: str) -> bool:
+    """Verify bracket balance and basic SPA-JSON formatting."""
+    return (
+        config_text.count("{") == config_text.count("}")
+        and config_text.count("[") == config_text.count("]")
+    )
+
+
 def write_config(config_text: str, output_path: str) -> None:
-    """Write the PipeWire config to a file."""
+    """Write the PipeWire config to a file after validating syntax."""
+    if not verify_spa_json_syntax(config_text):
+        raise ValueError("Generated PipeWire config has unbalanced SPA-JSON brackets")
     p = Path(output_path).expanduser()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(config_text)

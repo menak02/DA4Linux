@@ -5,6 +5,7 @@ import tempfile
 import os
 from pathlib import Path
 from unittest.mock import patch
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -587,6 +588,18 @@ def test_stage_node_count():
     node_count = sum(1 for l in lines if "name =" in l and "type =" not in l)
     # We should have at least 12 nodes (2 conv + peq + 2 gain + 2 limiter + others)
     assert node_count >= 12
+
+
+def test_verify_spa_json_syntax():
+    from da4linux.generator import verify_spa_json_syntax, write_config
+    valid = "context.modules = [ { args = { } } ]"
+    assert verify_spa_json_syntax(valid) is True
+
+    invalid = "context.modules = [ { args = { }"
+    assert verify_spa_json_syntax(invalid) is False
+
+    with pytest.raises(ValueError, match="unbalanced SPA-JSON"):
+        write_config(invalid, "/tmp/should_fail.conf")
 
 
 if __name__ == "__main__":

@@ -87,6 +87,24 @@ def _cmd_detect(args):
     print(f"  Headphones:    {'connected' if hp else 'not detected'}")
 
 
+def _cmd_profiles(args):
+    from .profiles import BUILTIN_PROFILES, load_user_profiles
+
+    print("=== DA4Linux Available Profiles ===")
+    user_profiles = load_user_profiles()
+
+    if user_profiles:
+        print("\n  Custom User Profiles (~/.config/da4linux/profiles/):")
+        for key, p in user_profiles.items():
+            name = p.get("name", key)
+            print(f"    - {key:32s} {name}")
+
+    print("\n  Built-in Profiles:")
+    for key, p in BUILTIN_PROFILES.items():
+        name = p.get("name", key)
+        print(f"    - {key:32s} {name}")
+
+
 def _cmd_parse(args):
     from .parser import parse_dax3_xml
 
@@ -196,6 +214,10 @@ def _cmd_generate(args):
     if mode not in VALID_MODES:
         print(f"  Warning: Unknown mode '{mode}'. Using 'music'.")
         mode = "music"
+
+    if getattr(args, "headphone", False):
+        stages["peq"] = False
+        print("  Headphone mode active — bypassing speaker PEQ filter.")
 
     # Auto-enable surround if headphones detected
     hp = _detect_headphones()
@@ -840,9 +862,19 @@ def main():
         action="store_true",
         help="Disable EasyEffects PipeWire configs (rename to .disabled)",
     )
+    gen_parser.add_argument(
+        "--headphone",
+        action="store_true",
+        help="Bypass speaker PEQ filter for headphone listening",
+    )
 
     # status
     status_parser = subparsers.add_parser("status", help="Show current status")
+
+    # profiles
+    profiles_parser = subparsers.add_parser(
+        "profiles", help="List available built-in and custom user profiles"
+    )
 
     # disable-easyeffects
     disable_ee_parser = subparsers.add_parser(
@@ -873,6 +905,7 @@ def main():
         "parse": _cmd_parse,
         "generate": _cmd_generate,
         "status": _cmd_status,
+        "profiles": _cmd_profiles,
         "disable-easyeffects": _cmd_disable_easyeffects,
         "reenable-easyeffects": _cmd_reenable_easyeffects,
         "restart-pipewire": _cmd_restart_pipewire,
