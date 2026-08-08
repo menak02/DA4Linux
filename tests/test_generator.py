@@ -402,8 +402,6 @@ def test_detect_available_limiter_fallback():
                 assert result == "clamp"
 
 
-# ── Phase 2+3: new stage tests ──────────────────────────────────────────
-
 def test_mb_compressor_node():
     """Verify LSP MB compressor node is generated."""
     from da4linux.generator import _generate_mb_compressor_node

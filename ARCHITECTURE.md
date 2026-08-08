@@ -3,7 +3,7 @@
 **Project:** DA4Linux — Dolby Audio Processing for Linux via PipeWire filter-chain
 **License:** GNU GPL v3
 **Date:** 2026-08-06
-**Status:** Design phase — Phase 1 implemented, Phase 2+3 designed
+**Status:** Implemented
 
 ---
 
