@@ -252,6 +252,59 @@ def test_parse_crossover_frequencies():
     assert freqs[2] == 3000.0
 
 
+def test_parse_xml_with_namespace(tmp_path):
+    """Verify DAX3 parser extracts data from XML containing explicit xmlns."""
+    xml_content = """<?xml version="1.0" encoding="utf-8"?>
+<dax3 xmlns="http://www.dolby.com/dax3">
+  <endpoint type="internal_speaker">
+    <profile type="music">
+      <tuning-cp>
+        <ieq-enable value="1"/>
+        <volmax-boost value="96"/>
+      </tuning-cp>
+      <tuning-vlldp>
+        <speaker-peq-filters>
+          <filter enabled="1" type="1" f0="500" gain="3.0" q="1.5"/>
+        </speaker-peq-filters>
+      </tuning-vlldp>
+    </profile>
+  </endpoint>
+</dax3>"""
+    p = tmp_path / "test_ns.xml"
+    p.write_text(xml_content)
+    tuning = parse_dax3_xml(str(p))
+    assert len(tuning.endpoints) == 1
+    profile = tuning.endpoints["internal_speaker/music"]
+    assert profile.ieq_enabled is True
+    assert profile.volmax_boost == 96.0
+    assert len(profile.peq_bands) == 1
+    assert profile.peq_bands[0].freq == 500.0
+
+
+def test_load_user_profiles(tmp_path, monkeypatch):
+    """Verify loading custom JSON profile from user config directory."""
+    import json
+    from da4linux.profiles import get_profile
+
+    user_dir = tmp_path / "da4linux" / "profiles"
+    user_dir.mkdir(parents=True)
+    custom_profile = {
+        "key": "CUSTOM_LAPTOP",
+        "name": "Custom User Laptop",
+        "peq_bands": [{"type": "bell", "freq": 1200, "gain": 4.5, "q": 1.0}],
+        "volmax_boost": 8.0,
+    }
+    (user_dir / "custom.json").write_text(json.dumps(custom_profile))
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    profile = get_profile("CUSTOM_LAPTOP")
+    assert profile is not None
+    assert profile.name == "Custom User Laptop"
+    assert profile.volmax_boost == 8.0
+    assert len(profile.peq_bands) == 1
+    assert profile.peq_bands[0].freq == 1200.0
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

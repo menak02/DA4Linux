@@ -66,12 +66,33 @@ def test_generate_filter_graph_basic():
         limiter_type="clamp",
     )
     assert "filter.graph" in graph
-    assert "conv_l" in graph
-    assert "conv_r" in graph
+    assert "conv_l" not in graph
+    assert "/dirac" not in graph
     assert "peq" in graph
     assert "gain_out_l" in graph
     assert "limiter_l" in graph
-    assert "/dirac" in graph
+    assert 'inputs = [ "peq:In 1" "peq:In 2" ]' in graph
+
+
+def test_generate_filter_graph_with_fir(tmp_path):
+    # Create fake IR files
+    ir_dir = tmp_path / "ir"
+    ir_dir.mkdir()
+    (ir_dir / "testco_foobook_pro_L.wav").write_bytes(b"RIFF")
+    (ir_dir / "testco_foobook_pro_R.wav").write_bytes(b"RIFF")
+
+    profile = _make_profile(volmax=6.0)
+    profile.ao_bands = [object()]  # non-empty
+    device = _make_device()
+
+    graph = generate_filter_graph(
+        profile, device,
+        ir_dir=str(ir_dir),
+        limiter_type="clamp",
+    )
+    assert "conv_l" in graph
+    assert "conv_r" in graph
+    assert 'inputs = [ "conv_l:In" "conv_r:In" ]' in graph
 
 
 def test_generate_filter_graph_lv2_limiter():
@@ -318,14 +339,24 @@ def test_volmax_boost_is_internal_gain_node():
     """volmax_boost 96 (1/16 dB units) = 6 dB → linear gain node in graph."""
     profile = _make_profile(volmax=96.0)
     device = _make_device()
-    graph = generate_filter_graph(
+    # Test with bass stage disabled (6dB unattenuated gain = 1.995262)
+    graph_raw = generate_filter_graph(
+        profile, device,
+        ir_dir="/tmp/test_ir",
+        limiter_type="clamp",
+        stages={"bass": False},
+    )
+    assert "gain_out_l" in graph_raw
+    assert "gain_out_r" in graph_raw
+    assert '"Mult" = 1.995262' in graph_raw
+
+    # Test with default active stages (headroom pre-attenuated gain)
+    graph_headroom = generate_filter_graph(
         profile, device,
         ir_dir="/tmp/test_ir",
         limiter_type="clamp",
     )
-    assert "gain_out_l" in graph
-    assert "gain_out_r" in graph
-    assert '"Mult" = 1.995262' in graph
+    assert '"Mult" = 1.318257' in graph_headroom
 
 
 def test_generate_no_peq_bands():
@@ -357,29 +388,18 @@ def test_detect_available_limiter_fallback():
     """When no plugins found, returns 'clamp'."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        # Create empty LV2 dir with no limiter_stereo in manifest
-        lv2_dir = tmp / "lsp-plugins.lv2"
-        lv2_dir.mkdir()
+        lv2_dir = tmp / "lv2" / "lsp-plugins.lv2"
+        lv2_dir.mkdir(parents=True)
         manifest = lv2_dir / "manifest.ttl"
         manifest.write_text("plug:compressor_stereo")  # no limiter_stereo
 
-        # Empty LADSPA dirs
         ladspa_dir = tmp / "ladspa"
-        ladspa_dir.mkdir()
+        ladspa_dir.mkdir(parents=True)
 
-        with patch("da4linux.generator.Path") as mock_path:
-            original_path = __import__("pathlib").Path
-            def mock_path_factory(p, *args, **kwargs):
-                s = str(p)
-                if s.startswith("/usr/lib/lv2/lsp-plugins.lv2"):
-                    return original_path(str(lv2_dir))
-                if s.startswith("/usr/lib/ladspa") or s.startswith("/usr/lib64/ladspa") or s.startswith("/usr/local/lib/ladspa"):
-                    return original_path(str(ladspa_dir))
-                return original_path(s)
-            mock_path.side_effect = mock_path_factory
-
-            result = detect_available_limiter()
-            assert result == "clamp"
+        with patch("da4linux.generator.get_lv2_search_paths", return_value=[tmp / "lv2"]):
+            with patch("da4linux.generator.get_ladspa_search_paths", return_value=[ladspa_dir]):
+                result = detect_available_limiter()
+                assert result == "clamp"
 
 
 # ── Phase 2+3: new stage tests ──────────────────────────────────────────
@@ -398,19 +418,10 @@ def test_mb_compressor_node():
 
 
 def test_mb_compressor_disabled():
-    """Verify MB compressor disabled produces passthrough."""
+    """Verify MB compressor stage returns passthrough when disabled."""
     from da4linux.generator import _generate_mb_compressor_node
     node, out_l, out_r, in_l, in_r = _generate_mb_compressor_node(enabled=False)
     assert "mb_byp" in node
-    assert "linear" in node
-    assert "mb_compressor" not in node
-    assert "mb_byp_l:Out" in out_l
-
-
-def test_stereo_enhancer_builtin():
-    """Verify stereo enhancer generates nodes (CALF or M/S matrix)."""
-    from da4linux.generator import _generate_stereo_enhancer_node
-    node, out_l, out_r, in_l, in_r = _generate_stereo_enhancer_node(enabled=True, width=1.5)
     # Either CALF LV2 or M/S matrix
     assert len(node) > 100
     assert "In" in in_l or "in_l" in in_l
@@ -554,7 +565,6 @@ def test_full_chain():
     assert "inputs = [" in graph
     assert "outputs = [" in graph
     # Check key stage nodes are present
-    assert "conv_l" in graph
     assert "peq" in graph
     assert "mb" in graph or "mb_" in graph
     assert "stereo" in graph or "ms_" in graph

@@ -65,6 +65,7 @@ class DAX3Profile:
     dialog_enhancer: float = 0.0
     volume_leveler: float = 0.0
     surround_boost: float = 0.0
+    crossover_freqs: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -78,13 +79,53 @@ class DAX3Tuning:
 # — Parsing helpers —
 
 
+def _local_tag(element) -> str:
+    if element is None or not hasattr(element, "tag"):
+        return ""
+    return element.tag.split("}")[-1] if "}" in element.tag else element.tag
+
+
+def _find_child(element, tag: str):
+    """Find first child element matching tag name, ignoring XML namespaces."""
+    if element is None:
+        return None
+    for child in element:
+        if _local_tag(child) == tag:
+            return child
+    return None
+
+
+def _find_all_children(element, tag: str):
+    """Find all child elements matching tag name, ignoring XML namespaces."""
+    if element is None:
+        return []
+    results = []
+    for child in element:
+        if _local_tag(child) == tag:
+            results.append(child)
+    return results
+
+
+def _find_recursive(element, tag: str):
+    """Find first element matching tag name anywhere in tree, ignoring namespaces."""
+    if element is None:
+        return None
+    if _local_tag(element) == tag:
+        return element
+    for child in element:
+        res = _find_recursive(child, tag)
+        if res is not None:
+            return res
+    return None
+
+
 def _text(element, tag, default=""):
     # Check attribute on element itself first (DAX3 <filter> elements use attributes)
     attr = element.get(tag)
     if attr is not None:
         return attr.strip()
-    # Check child element
-    child = element.find(tag)
+    # Check child element ignoring namespace
+    child = _find_child(element, tag)
     if child is not None:
         # New DAX3 format: <element value="123"/>
         val = child.get("value")
@@ -123,12 +164,7 @@ def _bool_elem(element, tag, default=False):
 
 def _find_all_elements(element, tag):
     """Find child elements with given tag, ignoring namespace."""
-    results = []
-    for child in element:
-        tag_name = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag_name == tag:
-            results.append(child)
-    return results
+    return _find_all_children(element, tag)
 
 
 # — Public parsing functions —
@@ -136,11 +172,11 @@ def _find_all_elements(element, tag):
 
 def parse_peq_filters(element) -> list[PEQBand]:
     bands = []
-    peq_container = element.find("speaker-peq-filters")
+    peq_container = _find_child(element, "speaker-peq-filters")
     if peq_container is None:
         return bands
 
-    for filt in peq_container.findall("filter"):
+    for filt in _find_all_children(peq_container, "filter"):
         enabled = _bool_elem(filt, "enabled", True)
         if not enabled:
             continue
@@ -171,12 +207,12 @@ def parse_peq_filters(element) -> list[PEQBand]:
 
 def parse_audio_optimizer(element) -> list[AudioOptimizerBand]:
     bands = []
-    ao_container = element.find("audio-optimizer-bands")
+    ao_container = _find_child(element, "audio-optimizer-bands")
     if ao_container is None:
         return bands
 
     for child in ao_container:
-        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        tag = _local_tag(child)
         if not tag.startswith("ch_"):
             continue
 
@@ -217,12 +253,12 @@ def parse_audio_optimizer(element) -> list[AudioOptimizerBand]:
 
 def parse_mb_compressor(element) -> list[MBCompressorBand]:
     bands = []
-    mb_container = element.find("mb-compressor-tuning")
+    mb_container = _find_child(element, "mb-compressor-tuning")
     if mb_container is None:
         return bands
 
     for group in mb_container:
-        tag = group.tag.split("}")[-1] if "}" in group.tag else group.tag
+        tag = _local_tag(group)
         if not tag.startswith("band_group_"):
             continue
 
@@ -265,7 +301,7 @@ def parse_mb_compressor(element) -> list[MBCompressorBand]:
 
 
 def parse_regulator(element) -> RegulatorSettings:
-    reg_container = element.find("regulator-tuning")
+    reg_container = _find_child(element, "regulator-tuning")
     if reg_container is None:
         return RegulatorSettings()
 
@@ -279,12 +315,12 @@ def parse_regulator(element) -> RegulatorSettings:
 def parse_constants(root) -> dict[str, object]:
     """Extract constant section: frequency grids, IEQ gain curves, etc."""
     constants: dict[str, object] = {}
-    const_elem = root.find(".//constant")
+    const_elem = _find_recursive(root, "constant")
     if const_elem is None:
         return constants
 
     for child in const_elem:
-        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        tag = _local_tag(child)
         # New format: <ieq_detailed target="150,142,188,..."/>
         target = child.get("target")
         if target is not None:
@@ -339,12 +375,12 @@ def parse_crossover_frequencies(element) -> list[float]:
     cross_freq, xover_freq) under mb-compressor-tuning.
     """
     freqs = []
-    mb_container = element.find("mb-compressor-tuning")
+    mb_container = _find_child(element, "mb-compressor-tuning")
     if mb_container is None:
         return freqs
 
     for child in mb_container:
-        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        tag = _local_tag(child)
         if "split" in tag.lower() or "crossover" in tag.lower() or "cross" in tag.lower() or "xover" in tag.lower():
             try:
                 val = child.get("value")
@@ -379,7 +415,7 @@ def _parse_tuning_cp(cp_elem, profile: DAX3Profile, constants: dict[str, object]
     profile.volmax_boost = _float_elem(cp_elem, "volmax-boost", 0.0)
 
     # IEQ curve: resolve <ieq-bands-set preset="XXX"/> from constants
-    ieq_bands_set = cp_elem.find("ieq-bands-set")
+    ieq_bands_set = _find_child(cp_elem, "ieq-bands-set")
     if ieq_bands_set is not None:
         preset_name = ieq_bands_set.get("preset")
         if preset_name and constants and preset_name in constants:
@@ -408,6 +444,7 @@ def _parse_tuning_vlldp(vlldp_elem, profile: DAX3Profile) -> None:
     profile.ao_bands = parse_audio_optimizer(vlldp_elem)
     profile.mb_compressor = parse_mb_compressor(vlldp_elem)
     profile.regulator = parse_regulator(vlldp_elem)
+    profile.crossover_freqs = parse_crossover_frequencies(vlldp_elem)
     # volmax-boost from vlldp overrides tuning-cp value if present
     volmax = _float_elem(vlldp_elem, "volmax-boost", 0.0)
     if volmax != 0.0:
@@ -421,13 +458,13 @@ def parse_dax3_xml(filepath: str) -> DAX3Tuning:
     tuning = DAX3Tuning()
     tuning.constants = parse_constants(root)
 
-    tuning_elem = root.find("tuning")
+    tuning_elem = _find_child(root, "tuning")
     if tuning_elem is not None:
         root = tuning_elem
 
-    for endpoint in root.findall("endpoint"):
+    for endpoint in _find_all_children(root, "endpoint"):
         endpoint_type = endpoint.get("type", "unknown")
-        for profile_elem in endpoint.findall("profile"):
+        for profile_elem in _find_all_children(endpoint, "profile"):
             profile_name = profile_elem.get("type", endpoint_type)
             key = f"{endpoint_type}/{profile_name}"
 
@@ -436,11 +473,11 @@ def parse_dax3_xml(filepath: str) -> DAX3Tuning:
                 endpoint_type=endpoint_type,
             )
 
-            cp = profile_elem.find("tuning-cp")
+            cp = _find_child(profile_elem, "tuning-cp")
             if cp is not None:
                 _parse_tuning_cp(cp, p, tuning.constants)
 
-            vlldp = profile_elem.find("tuning-vlldp")
+            vlldp = _find_child(profile_elem, "tuning-vlldp")
             if vlldp is not None:
                 _parse_tuning_vlldp(vlldp, p)
 
@@ -449,10 +486,10 @@ def parse_dax3_xml(filepath: str) -> DAX3Tuning:
     if not tuning.endpoints:
         # Try flat <tuning-cp> and <tuning-vlldp> directly under root
         p = DAX3Profile(name="default", endpoint_type="internal_speaker")
-        cp = root.find("tuning-cp")
+        cp = _find_child(root, "tuning-cp")
         if cp is not None:
             _parse_tuning_cp(cp, p)
-        vlldp = root.find("tuning-vlldp")
+        vlldp = _find_child(root, "tuning-vlldp")
         if vlldp is not None:
             _parse_tuning_vlldp(vlldp, p)
         # Only add if we actually found tuning data
@@ -460,3 +497,4 @@ def parse_dax3_xml(filepath: str) -> DAX3Tuning:
             tuning.endpoints["internal_speaker/default"] = p
 
     return tuning
+

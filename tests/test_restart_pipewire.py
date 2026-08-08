@@ -56,6 +56,24 @@ def test_is_supervised_false(monkeypatch, tmp_path):
     assert cli._is_supervised() is False
 
 
+def test_is_systemd_supervised_true(monkeypatch):
+    """systemctl --user active output indicates systemd supervision."""
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/systemctl" if name == "systemctl" else None)
+
+    class MockRunResult:
+        returncode = 0
+        stdout = "active"
+
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **kw: MockRunResult())
+    assert cli._is_systemd_supervised() is True
+
+
+def test_is_systemd_supervised_false(monkeypatch):
+    """systemctl not found or inactive indicates no systemd supervision."""
+    monkeypatch.setattr(cli.shutil, "which", lambda name: None)
+    assert cli._is_systemd_supervised() is False
+
+
 def test_validate_runtime_dir_missing(tmp_path):
     assert cli._validate_runtime_dir(str(tmp_path / "nope")) is False
 
@@ -69,9 +87,31 @@ def test_validate_runtime_dir_not_writable(monkeypatch, tmp_path):
     assert cli._validate_runtime_dir(str(tmp_path)) is False
 
 
+def test_detect_init_system_openrc(monkeypatch):
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/rc-service" if name == "rc-service" else None)
+
+    class MockResult:
+        returncode = 0
+        stdout = "started"
+
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **kw: MockResult())
+    assert cli.detect_init_system() == "openrc"
+
+
+def test_detect_init_system_dinit(monkeypatch):
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/dinitctl" if name == "dinitctl" else None)
+
+    class MockResult:
+        returncode = 0
+        stdout = "RUNNING"
+
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **kw: MockResult())
+    assert cli.detect_init_system() == "dinit"
+
+
 def test_restart_guard_exits_2_on_bad_runtime_dir(monkeypatch):
     """The runtime-dir guard exits with code 2 before touching processes."""
-    monkeypatch.setattr(cli, "_is_supervised", lambda: False)
+    monkeypatch.setattr(cli, "detect_init_system", lambda: "standalone")
     monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/" + name)
     monkeypatch.setattr(cli, "_validate_runtime_dir", lambda runtime: False)
     with pytest.raises(SystemExit) as exc:

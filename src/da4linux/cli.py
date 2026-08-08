@@ -493,20 +493,72 @@ def _service_dirs() -> list:
     ]
 
 
-def _is_supervised() -> bool:
-    """Return True if pipewire is supervised by runit."""
+def detect_init_system() -> str:
+    """Detect the active init system / service supervisor for PipeWire.
+
+    Returns one of: 'systemd', 'runit', 'openrc', 'dinit', 's6', or 'standalone'.
+    """
+    # 1. Systemd
+    systemctl = shutil.which("systemctl")
+    if systemctl:
+        try:
+            r = subprocess.run(
+                [systemctl, "--user", "is-active", "pipewire"],
+                capture_output=True, text=True, timeout=3,
+            )
+            if r.returncode == 0 or "active" in r.stdout.lower():
+                return "systemd"
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    # 2. Runit
     for d in _service_dirs():
         if os.path.isdir(d):
-            return True
+            return "runit"
     sv = shutil.which("sv")
     if sv:
         try:
-            r = subprocess.run([sv, "status", "pipewire"], capture_output=True)
+            r = subprocess.run([sv, "status", "pipewire"], capture_output=True, timeout=3)
             if r.returncode == 0:
-                return True
-        except OSError:
+                return "runit"
+        except (OSError, subprocess.TimeoutExpired):
             pass
-    return False
+
+    # 3. OpenRC
+    rc_service = shutil.which("rc-service")
+    if rc_service:
+        try:
+            r = subprocess.run([rc_service, "pipewire", "status"], capture_output=True, timeout=3)
+            if r.returncode == 0 or "started" in r.stdout.lower():
+                return "openrc"
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    # 4. Dinit
+    dinitctl = shutil.which("dinitctl")
+    if dinitctl:
+        try:
+            r = subprocess.run([dinitctl, "status", "pipewire"], capture_output=True, timeout=3)
+            if r.returncode == 0 or "RUNNING" in r.stdout:
+                return "dinit"
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    # 5. s6
+    if os.path.isdir("/run/service/pipewire") or os.path.isdir(os.path.expanduser("~/.s6/sv/pipewire")):
+        return "s6"
+
+    return "standalone"
+
+
+def _is_supervised() -> bool:
+    """Return True if pipewire is supervised by runit."""
+    return detect_init_system() == "runit"
+
+
+def _is_systemd_supervised() -> bool:
+    """Return True if PipeWire is managed by systemd user session."""
+    return detect_init_system() == "systemd"
 
 
 def _print_summary_and_exit(runtime, pw_socket, pulse_socket, pw_ok, wp_ok, pulse_ok, spawned):
@@ -570,6 +622,79 @@ def _restart_supervised(runtime: str, pw_socket: str, pulse_socket: str) -> None
     _print_summary_and_exit(runtime, pw_socket, pulse_socket, pw_ok, wp_ok, pulse_ok, {})
 
 
+def _restart_systemd(runtime: str, pw_socket: str, pulse_socket: str) -> None:
+    """Restart via systemctl --user when PipeWire is managed by systemd."""
+    print("  PipeWire is managed by systemd; delegating to systemctl --user restart ...")
+    systemctl = shutil.which("systemctl")
+    try:
+        r = subprocess.run(
+            [systemctl, "--user", "restart", "pipewire", "pipewire-pulse", "wireplumber"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"  Error running systemctl --user restart: {e}")
+        sys.exit(1)
+    if r.returncode != 0:
+        print(f"  systemctl restart failed (exit {r.returncode}):")
+        if r.stderr:
+            print(r.stderr)
+        sys.exit(1)
+
+    pw_ok = _wait_for_socket(pw_socket, timeout=10.0)
+    pulse_ok = _wait_for_socket(pulse_socket, timeout=10.0)
+    wp_ok = _wait_for_process("wireplumber", timeout=5.0)
+    _print_summary_and_exit(runtime, pw_socket, pulse_socket, pw_ok, wp_ok, pulse_ok, {})
+
+
+def _restart_openrc(runtime: str, pw_socket: str, pulse_socket: str) -> None:
+    """Restart via OpenRC rc-service."""
+    print("  PipeWire is managed by OpenRC; delegating to rc-service restart ...")
+    rc = shutil.which("rc-service")
+    try:
+        subprocess.run([rc, "pipewire", "restart"], capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"  Error running rc-service restart: {e}")
+        sys.exit(1)
+
+    pw_ok = _wait_for_socket(pw_socket, timeout=10.0)
+    pulse_ok = _wait_for_socket(pulse_socket, timeout=10.0)
+    wp_ok = _wait_for_process("wireplumber", timeout=5.0)
+    _print_summary_and_exit(runtime, pw_socket, pulse_socket, pw_ok, wp_ok, pulse_ok, {})
+
+
+def _restart_dinit(runtime: str, pw_socket: str, pulse_socket: str) -> None:
+    """Restart via dinitctl."""
+    print("  PipeWire is managed by Dinit; delegating to dinitctl restart ...")
+    dinitctl = shutil.which("dinitctl")
+    try:
+        subprocess.run([dinitctl, "restart", "pipewire"], capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"  Error running dinitctl restart: {e}")
+        sys.exit(1)
+
+    pw_ok = _wait_for_socket(pw_socket, timeout=10.0)
+    pulse_ok = _wait_for_socket(pulse_socket, timeout=10.0)
+    wp_ok = _wait_for_process("wireplumber", timeout=5.0)
+    _print_summary_and_exit(runtime, pw_socket, pulse_socket, pw_ok, wp_ok, pulse_ok, {})
+
+
+def _restart_s6(runtime: str, pw_socket: str, pulse_socket: str) -> None:
+    """Restart via s6-svc."""
+    print("  PipeWire is managed by s6; delegating to s6-svc -r ...")
+    s6_svc = shutil.which("s6-svc")
+    target = "/run/service/pipewire" if os.path.isdir("/run/service/pipewire") else os.path.expanduser("~/.s6/sv/pipewire")
+    try:
+        subprocess.run([s6_svc, "-r", target], capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"  Error running s6-svc: {e}")
+        sys.exit(1)
+
+    pw_ok = _wait_for_socket(pw_socket, timeout=10.0)
+    pulse_ok = _wait_for_socket(pulse_socket, timeout=10.0)
+    wp_ok = _wait_for_process("wireplumber", timeout=5.0)
+    _print_summary_and_exit(runtime, pw_socket, pulse_socket, pw_ok, wp_ok, pulse_ok, {})
+
+
 def _cmd_restart_pipewire(args):
     runtime = _runtime_dir()
     pw_socket = os.path.join(runtime, "pipewire-0")
@@ -578,11 +703,21 @@ def _cmd_restart_pipewire(args):
     print("=== Restarting PipeWire (user session) ===")
     print(f"  Runtime dir: {runtime}")
 
-    # If runit supervises pipewire, delegate to sv instead of pkill+spawn:
-    # pkill on a supervised service triggers runsv respawn, producing
-    # duplicate daemons fighting over the socket.
-    if _is_supervised():
+    init_sys = detect_init_system()
+    if init_sys == "systemd":
+        _restart_systemd(runtime, pw_socket, pulse_socket)
+        return
+    elif init_sys == "runit":
         _restart_supervised(runtime, pw_socket, pulse_socket)
+        return
+    elif init_sys == "openrc":
+        _restart_openrc(runtime, pw_socket, pulse_socket)
+        return
+    elif init_sys == "dinit":
+        _restart_dinit(runtime, pw_socket, pulse_socket)
+        return
+    elif init_sys == "s6":
+        _restart_s6(runtime, pw_socket, pulse_socket)
         return
 
     missing = [b for b in ("pipewire", "wireplumber", "pipewire-pulse")

@@ -88,11 +88,11 @@
 
 | Module | Language | Responsibility | Dependencies |
 |--------|----------|----------------|--------------|
-| **`da4linux-cli`** | Python 3.11+ | CLI entry point; profile management; DMI detection; config generation | `typer`, `rich` |
-| **`da4linux-core`** | Python 3.11+ | DAX3 XML parser; tuning data model; filter coefficient extraction; profile database | `lxml`, `pydantic` |
-| **`da4linux-config`** | Python 3.11+ | PipeWire filter-chain JSON/SPA-JSON config generator; profile writer | (none beyond stdlib) |
-| **`da4linux-dsp`** | C11 | Custom DSP where LV2/builtins are insufficient: bass enhancement (MaxxBass-style), dialogue enhancement (M/S extraction), dynamic loudness compensation (ISO 226) | `libpipewire`, `libspa`, `libm` |
-| **`da4linux-service`** | Shell + systemd | systemd user unit; WirePlumber Lua script; auto-start logic | `systemd`, `wireplumber` |
+| **`da4linux.cli`** | Python 3.9+ | CLI entry point; DMI auto-detection; status reporting; multi-init restart management | Python stdlib (`argparse`, `shutil`, `subprocess`) |
+| **`da4linux.parser`** | Python 3.9+ | DAX3 XML parser; namespace-insensitive ElementTree processing; tuning data model | Python stdlib (`xml.etree.ElementTree`, `dataclasses`) |
+| **`da4linux.generator`** | Python 3.9+ | Dynamic LV2/LADSPA path search; 9-stage SPA-JSON filter graph generator; headroom pre-gain calculation | Python stdlib (`pathlib`, `math`) |
+| **`da4linux.profiles`** | Python 3.9+ | Built-in hardware profiles & custom user JSON profile loader (`~/.config/da4linux/profiles/`) | Python stdlib (`json`, `pathlib`) |
+| **`da4linux-service`** | Agnostic | systemd user units, runit services, OpenRC, Dinit, s6, and XDG autostart integration | XDG Autostart / Active Session Supervisor |
 
 ### 1.3 Data Flow
 

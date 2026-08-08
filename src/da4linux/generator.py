@@ -8,6 +8,7 @@ SPA-JSON format is NOT regular JSON: unquoted keys, no trailing commas,
 key=value separators, # comments.
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,62 @@ from .plugin_db import (
     CALF_BASS_ENHANCER_URI, CALF_STEREO_TOOLS_URI,
     LSP_MB_COMPRESSOR_URI, LSP_LOUD_COMP_URI, LSP_LIMITER_URI,
 )
+
+
+def get_lv2_search_paths() -> list[Path]:
+    """Return list of LV2 plugin search directories."""
+    paths = []
+    lv2_env = os.environ.get("LV2_PATH")
+    if lv2_env:
+        for p in lv2_env.split(":"):
+            if p.strip():
+                paths.append(Path(p.strip()).expanduser())
+
+    default_dirs = [
+        Path("~/.lv2").expanduser(),
+        Path("/usr/local/lib/lv2"),
+        Path("/usr/lib/lv2"),
+        Path("/usr/lib64/lv2"),
+        Path("/usr/lib/x86_64-linux-gnu/lv2"),
+        Path("/usr/lib/aarch64-linux-gnu/lv2"),
+        Path("/usr/lib/arm-linux-gnueabihf/lv2"),
+    ]
+    for d in default_dirs:
+        if d not in paths:
+            paths.append(d)
+    return paths
+
+
+def get_ladspa_search_paths() -> list[Path]:
+    """Return list of LADSPA plugin search directories."""
+    paths = []
+    env = os.environ.get("LADSPA_PATH")
+    if env:
+        for p in env.split(":"):
+            if p.strip():
+                paths.append(Path(p.strip()).expanduser())
+
+    default_dirs = [
+        Path("~/.ladspa").expanduser(),
+        Path("/usr/local/lib/ladspa"),
+        Path("/usr/lib/ladspa"),
+        Path("/usr/lib64/ladspa"),
+        Path("/usr/lib/x86_64-linux-gnu/ladspa"),
+        Path("/usr/lib/aarch64-linux-gnu/ladspa"),
+    ]
+    for d in default_dirs:
+        if d not in paths:
+            paths.append(d)
+    return paths
+
+
+def find_lv2_plugin_ttl(bundle_dir_name: str, ttl_name: str) -> bool:
+    """Check if an LV2 plugin TTL file exists across search paths."""
+    for base in get_lv2_search_paths():
+        candidate = base / bundle_dir_name / ttl_name
+        if candidate.exists():
+            return True
+    return False
 
 
 def peq_band_to_spa_filter(band: PEQBand) -> str:
@@ -74,6 +131,7 @@ def _generate_convolver_nodes(
 def _generate_mb_compressor_node(
     enabled: bool = True,
     comp_ratio: float = 2.0,
+    crossover_freqs: Optional[list[float]] = None,
 ) -> tuple[str, str, str, str, str]:
     """Generate LSP MB Compressor Stereo LV2 node.
 
@@ -87,8 +145,13 @@ def _generate_mb_compressor_node(
             "mb_byp_l:In", "mb_byp_r:In",
         )
 
+    # Use parsed crossover frequencies if available (needs 3 split frequencies sf_1, sf_2, sf_3)
+    sf1 = crossover_freqs[0] if crossover_freqs and len(crossover_freqs) > 0 else 120
+    sf2 = crossover_freqs[1] if crossover_freqs and len(crossover_freqs) > 1 else 500
+    sf3 = crossover_freqs[2] if crossover_freqs and len(crossover_freqs) > 2 else 3000
+
     # Build control block dynamically for the per-band ratio
-    # Default: 4-band compressor, mode=1 (modern), 120/500/3000 Hz crossover
+    # Default: 4-band compressor, mode=1 (modern)
     ratio_0 = min(comp_ratio * 0.6, 1.5)
     ratio_1 = comp_ratio
     ratio_2 = max(comp_ratio * 0.8, 1.2)
@@ -109,11 +172,11 @@ def _generate_mb_compressor_node(
                             "react" = 50.0
                             "ssplit" = 0
                             "cbe_1" = 1
-                            "sf_1" = 120
+                            "sf_1" = {sf1}
                             "cbe_2" = 1
-                            "sf_2" = 500
+                            "sf_2" = {sf2}
                             "cbe_3" = 1
-                            "sf_3" = 3000
+                            "sf_3" = {sf3}
                             "cbe_4" = 0 "cbe_5" = 0 "cbe_6" = 0 "cbe_7" = 0
                             "ce_0" = 1 "cm_0" = 1 "at_0" = 10.0 "rt_0" = 40.0 "cr_0" = {ratio_0} "kn_0" = 2.0 "bth_0" = 1.0 "bsa_0" = 0.0 "mk_0" = 0.0
                             "ce_1" = 1 "cm_1" = 1 "at_1" = 15.0 "rt_1" = 60.0 "cr_1" = {ratio_1} "kn_1" = 2.0 "bth_1" = 1.0 "bsa_1" = 0.0 "mk_1" = 0.0
@@ -140,9 +203,7 @@ def _generate_stereo_enhancer_node(
             "ste_byp_l:In", "ste_byp_r:In",
         )
 
-    calf_stereo = Path(
-        "/usr/lib/x86_64-linux-gnu/lv2/calf.lv2/StereoTools.ttl"
-    ).exists()
+    calf_stereo = find_lv2_plugin_ttl("calf.lv2", "StereoTools.ttl")
 
     if calf_stereo:
         node = f"""                    {{
@@ -237,9 +298,7 @@ def _generate_bass_enhancer_node(
             "bass_byp_l:In", "bass_byp_r:In",
         )
 
-    calf_bass = Path(
-        "/usr/lib/x86_64-linux-gnu/lv2/calf.lv2/BassEnhancer.ttl"
-    ).exists()
+    calf_bass = find_lv2_plugin_ttl("calf.lv2", "BassEnhancer.ttl")
 
     if calf_bass:
         node = f"""                    {{
@@ -359,9 +418,7 @@ def _generate_loudness_node(
             "loud_byp_l:In", "loud_byp_r:In",
         )
 
-    lsp_loud = Path(
-        "/usr/lib/lv2/lsp-plugins.lv2/loud_comp_stereo.ttl"
-    ).exists()
+    lsp_loud = find_lv2_plugin_ttl("lsp-plugins.lv2", "loud_comp_stereo.ttl")
 
     if lsp_loud:
         node = f"""                    {{
@@ -590,14 +647,30 @@ def generate_filter_graph(
 
     filters_str = _build_filters_string(profile.peq_bands)
     volmax_db = profile.volmax_boost / 16.0 if profile.volmax_boost > 0 else 0.0
-    volmax_linear = pow(10.0, volmax_db / 20.0) if volmax_db > 0 else 1.0
+
+    # Calculate cumulative gain across active stages to maintain headroom
+    peq_max_boost = max([b.gain for b in profile.peq_bands if b.enabled and b.gain > 0] + [0.0])
+    bass_boost = (bass_amount * 6.0) if stages.get("bass", True) else 0.0
+    dial_boost = ((dialogue_boost - 1.0) * 3.0) if (stages.get("dialogue", True) and dialogue_boost > 1.0) else 0.0
+    total_boost = peq_max_boost + bass_boost + dial_boost + volmax_db
+
+    # Pre-attenuate volmax gain if cumulative boost exceeds +6dB headroom
+    headroom_attenuation = max(0.0, total_boost - 6.0)
+    net_volmax_db = max(0.0, volmax_db - headroom_attenuation)
+    volmax_linear = pow(10.0, net_volmax_db / 20.0) if net_volmax_db > 0 else 1.0
 
     # ── Generate all stages ──────────────────────────────────────────
 
     # Stage 1: Convolver
-    conv_nodes = _generate_convolver_nodes(ir_left_path, ir_right_path)
-    conv_out_l, conv_out_r = "conv_l:Out", "conv_r:Out"
-    conv_in_l, conv_in_r = "conv_l:In", "conv_r:In"
+    if use_fir:
+        conv_nodes = _generate_convolver_nodes(ir_left, ir_right)
+        conv_out_l, conv_out_r = "conv_l:Out", "conv_r:Out"
+        conv_in_l, conv_in_r = "conv_l:In", "conv_r:In"
+        graph_in_l, graph_in_r = conv_in_l, conv_in_r
+    else:
+        conv_nodes = ""
+        conv_out_l = conv_out_r = conv_in_l = conv_in_r = ""
+        graph_in_l, graph_in_r = "peq:In 1", "peq:In 2"
 
     # Stage 2: PEQ
     peq_node = f"""                    {{
@@ -616,7 +689,7 @@ def generate_filter_graph(
     # Stage 3: MB Compressor
     mb_enabled = stages.get("mb_compressor", True)
     mb_node, mb_out_l, mb_out_r, mb_in_l, mb_in_r = _generate_mb_compressor_node(
-        enabled=mb_enabled, comp_ratio=comp_ratio,
+        enabled=mb_enabled, comp_ratio=comp_ratio, crossover_freqs=profile.crossover_freqs,
     )
 
     # Stage 4: Stereo enhancer
@@ -750,9 +823,11 @@ def generate_filter_graph(
     # ── Build links list ─────────────────────────────────────────────
 
     links = []
-    # Conv → PEQ
-    links.append(f"                    {_link(conv_out_l, peq_in_l)}")
-    links.append(f"                    {_link(conv_out_r, peq_in_r)}")
+    # Conv → PEQ (only if FIR convolver is active)
+    if use_fir:
+        links.append(f"                    {_link(conv_out_l, peq_in_l)}")
+        links.append(f"                    {_link(conv_out_r, peq_in_r)}")
+
     # PEQ → MB Compressor
     links.append(f"                    {_link(peq_out_l, mb_in_l)}")
     links.append(f"                    {_link(peq_out_r, mb_in_r)}")
@@ -762,7 +837,7 @@ def generate_filter_graph(
     if not ste_enabled:
         links.append(f"                    {_link(mb_out_l, ste_in_l)}")
         links.append(f"                    {_link(mb_out_r, ste_in_r)}")
-    elif Path("/usr/lib/x86_64-linux-gnu/lv2/calf.lv2/StereoTools.ttl").exists():
+    elif find_lv2_plugin_ttl("calf.lv2", "StereoTools.ttl"):
         links.append(f"                    {_link(mb_out_l, ste_in_l)}")
         links.append(f"                    {_link(mb_out_r, ste_in_r)}")
     else:
@@ -839,7 +914,7 @@ def generate_filter_graph(
                 links = [
 {links_body}
                 ]
-                inputs = [ "{conv_in_l}" "{conv_in_r}" ]
+                inputs = [ "{graph_in_l}" "{graph_in_r}" ]
                 outputs = [ "{lim_out_l}" "{lim_out_r}" ]
             }}"""
 
@@ -1034,9 +1109,8 @@ def detect_available_limiter() -> str:
     Returns one of: "lv2" (LSP LV2), "ladspa" (LSP LADSPA), "zam" (ZaMaximX2),
     or "clamp" (built-in clamp fallback).
     """
-    lv2_limiter = Path("/usr/lib/lv2/lsp-plugins.lv2")
-    if lv2_limiter.is_dir():
-        manifest = lv2_limiter / "manifest.ttl"
+    for base in get_lv2_search_paths():
+        manifest = base / "lsp-plugins.lv2" / "manifest.ttl"
         if manifest.exists():
             try:
                 content = manifest.read_text()
@@ -1045,13 +1119,7 @@ def detect_available_limiter() -> str:
             except (OSError, PermissionError):
                 pass
 
-    ladspa_dirs = [
-        Path("/usr/lib/ladspa"),
-        Path("/usr/lib64/ladspa"),
-        Path("/usr/local/lib/ladspa"),
-    ]
-
-    for ladspa_dir in ladspa_dirs:
+    for ladspa_dir in get_ladspa_search_paths():
         if not ladspa_dir.is_dir():
             continue
         try:
@@ -1061,7 +1129,7 @@ def detect_available_limiter() -> str:
         except (OSError, PermissionError):
             pass
 
-    for ladspa_dir in ladspa_dirs:
+    for ladspa_dir in get_ladspa_search_paths():
         if not ladspa_dir.is_dir():
             continue
         try:
@@ -1072,6 +1140,7 @@ def detect_available_limiter() -> str:
             pass
 
     return "clamp"
+
 
 
 def write_config(config_text: str, output_path: str) -> None:

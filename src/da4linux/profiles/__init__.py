@@ -87,9 +87,34 @@ BUILTIN_PROFILES = {
 }
 
 
+import json
+import os
+from pathlib import Path
+
+
+def load_user_profiles() -> dict[str, dict]:
+    """Load external custom JSON profiles from user config and system config dirs."""
+    profiles = {}
+    config_dirs = [
+        Path("/etc/da4linux/profiles"),
+        Path(os.environ.get("XDG_CONFIG_HOME") or "~/.config").expanduser() / "da4linux" / "profiles",
+    ]
+    for d in config_dirs:
+        if d.is_dir():
+            for json_file in d.glob("*.json"):
+                try:
+                    data = json.loads(json_file.read_text())
+                    key = data.get("key") or json_file.stem
+                    profiles[key] = data
+                except Exception:
+                    pass
+    return profiles
+
+
 def get_profile(key: str) -> DAX3Profile | None:
-    """Get a built-in profile by key, returning None if not found."""
-    data = BUILTIN_PROFILES.get(key)
+    """Get a profile by key, checking user profiles first then built-in profiles."""
+    user_profiles = load_user_profiles()
+    data = user_profiles.get(key) or BUILTIN_PROFILES.get(key)
     if data is None:
         data = BUILTIN_PROFILES.get("GENERIC_LAPTOP")
         if data is None:
@@ -99,11 +124,11 @@ def get_profile(key: str) -> DAX3Profile | None:
     for b in data.get("peq_bands", []):
         bands.append(
             PEQBand(
-                filter_type=b["type"],
-                freq=b["freq"],
-                gain=b["gain"],
+                filter_type=b.get("type", "bell"),
+                freq=b.get("freq", 1000.0),
+                gain=b.get("gain", 0.0),
                 q=b.get("q", 0.707),
-                enabled=True,
+                enabled=b.get("enabled", True),
             )
         )
 
