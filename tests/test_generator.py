@@ -357,7 +357,7 @@ def test_volmax_boost_is_internal_gain_node():
         ir_dir="/tmp/test_ir",
         limiter_type="clamp",
     )
-    assert '"Mult" = 1.318257' in graph_headroom
+    assert '"Mult" = 1.995262' in graph_headroom
 
 
 def test_generate_no_peq_bands():

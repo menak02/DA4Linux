@@ -56,7 +56,7 @@ BUILTIN_PROFILES = {
             {"type": "peaking", "freq": 3500, "gain": -2.0, "q": 2.0},
             {"type": "highshelf", "freq": 8000, "gain": 2.0, "q": 0.7},
         ],
-        "volmax_boost": 6.0,
+        "volmax_boost": 112.0,  # 112 / 16 = +7.0dB
         "use_fir": False,
     },
     "LENOVO_20WNS73J00_RealtekALC257": {
@@ -72,7 +72,7 @@ BUILTIN_PROFILES = {
             {"type": "peaking", "freq": 3500, "gain": -2.0, "q": 2.0},
             {"type": "highshelf", "freq": 8000, "gain": 2.0, "q": 0.7},
         ],
-        "volmax_boost": 6.0,
+        "volmax_boost": 112.0,  # 112 / 16 = +7.0dB
         "use_fir": False,
     },
     "GENERIC_LAPTOP": {
@@ -85,7 +85,7 @@ BUILTIN_PROFILES = {
             {"type": "peaking", "freq": 3500, "gain": -2.0, "q": 1.5},
             {"type": "highshelf", "freq": 8000, "gain": 2.5, "q": 0.7},
         ],
-        "volmax_boost": 4.5,
+        "volmax_boost": 128.0,  # 128 / 16 = +8.0dB
         "use_fir": False,
     },
 }
