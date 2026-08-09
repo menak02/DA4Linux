@@ -64,6 +64,7 @@ PEQ_FILTER_TYPES = {
 # PipeWire param_eq filter type name for each PEQ type
 PARAM_EQ_TYPES = {
     "bell": "bq_peaking",
+    "peaking": "bq_peaking",
     "highshelf": "bq_highshelf",
     "lowshelf": "bq_lowshelf",
     "highpass": "bq_highpass",
