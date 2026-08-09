@@ -1058,9 +1058,11 @@ def generate_pipewire_config(
 context.modules = [
     {{
         name = libpipewire-module-filter-chain
+        flags = [ ifexists nofail ]
         args = {{
             node.description = "DA4Linux ({device_name})"
             media.name = "DA4Linux ({device_name})"
+            audio.rate = {DEFAULT_SAMPLE_RATE}
 {filter_graph}
             audio.channels = 2
             audio.position = [ FL FR ]
