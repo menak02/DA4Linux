@@ -2,8 +2,28 @@ import React from "react";
 import { BentoTile } from "./BentoTile";
 import { Volume2, HardDrive, RefreshCw, PowerOff } from "lucide-react";
 import { Command } from "@tauri-apps/plugin-shell";
+import { useProfile } from "../hooks/useProfile";
 
 export const Dashboard: React.FC = () => {
+  const { regenerateDsp } = useProfile();
+
+  const handleRegenerate = async (bypass = false) => {
+    try {
+      if (bypass) {
+        // Just run the regular CLI bypass
+        const command = Command.sidecar("bin/da4linux-cli", ["generate", "--disable", "all"]);
+        const output = await command.execute();
+        alert(output.stdout || output.stderr);
+        return;
+      }
+      
+      const stdout = await regenerateDsp();
+      alert(stdout || "DSP Profile applied successfully.");
+    } catch (e) {
+      alert("Error: " + e);
+    }
+  };
+
   const runCommand = async (args: string[]) => {
     try {
       const command = Command.sidecar("bin/da4linux-cli", args);
@@ -29,10 +49,10 @@ export const Dashboard: React.FC = () => {
         </div>
         
         <div className="flex gap-4 mt-auto">
-          <button onClick={() => runCommand(["generate"])} className="flex-1 bg-primary text-primary-foreground font-semibold py-3 rounded-xl shadow-lg hover:bg-primary-hover transition-colors cursor-pointer">
+          <button onClick={() => handleRegenerate(false)} className="flex-1 bg-primary text-primary-foreground font-semibold py-3 rounded-xl shadow-lg hover:bg-primary-hover transition-colors cursor-pointer">
             Regenerate DSP
           </button>
-          <button onClick={() => runCommand(["generate", "--disable", "all"])} className="px-6 bg-destructive/10 text-destructive font-medium py-3 rounded-xl hover:bg-destructive/20 transition-colors flex items-center justify-center gap-2 cursor-pointer" title="Global Bypass">
+          <button onClick={() => handleRegenerate(true)} className="px-6 bg-destructive/10 text-destructive font-medium py-3 rounded-xl hover:bg-destructive/20 transition-colors flex items-center justify-center gap-2 cursor-pointer" title="Global Bypass">
             <PowerOff className="w-4 h-4" /> Bypass
           </button>
           <button onClick={() => runCommand(["restart-pipewire"])} className="flex-1 bg-surface border border-border font-medium py-3 rounded-xl hover:bg-surface-hover transition-colors flex items-center justify-center gap-2 cursor-pointer">
@@ -46,8 +66,8 @@ export const Dashboard: React.FC = () => {
         description="Current hardware profile in use."
       >
         <div className="mt-4 p-4 bg-muted/50 rounded-xl border border-border">
-          <div className="text-sm font-mono text-foreground font-semibold">LENOVO_20WNS73J00</div>
-          <div className="text-xs text-muted-foreground mt-1">Realtek ALC257</div>
+          <div className="text-sm font-mono text-foreground font-semibold">Custom UI Profile</div>
+          <div className="text-xs text-muted-foreground mt-1">Edited locally</div>
         </div>
       </BentoTile>
 
@@ -65,3 +85,4 @@ export const Dashboard: React.FC = () => {
     </div>
   );
 };
+

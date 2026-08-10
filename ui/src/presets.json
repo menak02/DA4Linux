@@ -1,0 +1,87 @@
+[
+  {
+    "id": "lenovo-t14s-gen2",
+    "name": "ThinkPad T14s Gen 2 (ALC3287)",
+    "author": "menak02",
+    "downloads": 1240,
+    "profile": {
+      "name": "ThinkPad T14s Gen 2",
+      "endpoint_type": "internal_speaker",
+      "peq_bands": [
+        { "filter_type": "highpass", "freq": 180, "gain": 0.0, "q": 1.0, "enabled": true },
+        { "filter_type": "peaking", "freq": 350, "gain": -2.0, "q": 1.5, "enabled": true },
+        { "filter_type": "peaking", "freq": 850, "gain": 3.0, "q": 1.2, "enabled": true },
+        { "filter_type": "peaking", "freq": 2500, "gain": 4.5, "q": 2.0, "enabled": true },
+        { "filter_type": "peaking", "freq": 5500, "gain": -3.0, "q": 1.5, "enabled": true },
+        { "filter_type": "highshelf", "freq": 9000, "gain": 2.5, "q": 0.7, "enabled": true }
+      ],
+      "mb_compressor": [
+        { "threshold": -30, "ratio": 3.5, "attack": 1.5, "release": 50.0, "knee": 1.0, "makeup_gain": 2.0 },
+        { "threshold": -24, "ratio": 2.5, "attack": 3.0, "release": 70.0, "knee": 2.0, "makeup_gain": 0.0 },
+        { "threshold": -18, "ratio": 1.5, "attack": 5.0, "release": 90.0, "knee": 3.0, "makeup_gain": 0.0 },
+        { "threshold": -12, "ratio": 1.2, "attack": 5.0, "release": 100.0, "knee": 3.0, "makeup_gain": 0.0 }
+      ],
+      "volmax_boost": 320.0,
+      "ieq_enabled": true,
+      "ieq_amount": 7.0,
+      "dialog_enhancer": 2.5,
+      "surround_boost": 0.0
+    }
+  },
+  {
+    "id": "dell-xps-13-9310",
+    "name": "Dell XPS 13 (9310)",
+    "author": "xps_master",
+    "downloads": 856,
+    "profile": {
+      "name": "Dell XPS 13 (9310)",
+      "endpoint_type": "internal_speaker",
+      "peq_bands": [
+        { "filter_type": "highpass", "freq": 150, "gain": 0.0, "q": 1.2, "enabled": true },
+        { "filter_type": "peaking", "freq": 400, "gain": 1.5, "q": 1.0, "enabled": true },
+        { "filter_type": "peaking", "freq": 1200, "gain": -1.5, "q": 1.5, "enabled": true },
+        { "filter_type": "peaking", "freq": 3200, "gain": 3.0, "q": 1.8, "enabled": true },
+        { "filter_type": "highshelf", "freq": 8500, "gain": 4.0, "q": 0.7, "enabled": true }
+      ],
+      "mb_compressor": [
+        { "threshold": -35, "ratio": 4.0, "attack": 1.0, "release": 40.0, "knee": 0.5, "makeup_gain": 3.0 },
+        { "threshold": -20, "ratio": 2.0, "attack": 2.5, "release": 60.0, "knee": 1.0, "makeup_gain": 0.0 },
+        { "threshold": -15, "ratio": 1.5, "attack": 4.0, "release": 80.0, "knee": 2.0, "makeup_gain": 0.0 },
+        { "threshold": -10, "ratio": 1.2, "attack": 5.0, "release": 100.0, "knee": 3.0, "makeup_gain": 0.0 }
+      ],
+      "volmax_boost": 256.0,
+      "ieq_enabled": true,
+      "ieq_amount": 5.0,
+      "dialog_enhancer": 1.0,
+      "surround_boost": 2.0
+    }
+  },
+  {
+    "id": "asus-rog-ally",
+    "name": "ASUS ROG Ally",
+    "author": "handheld_fan",
+    "downloads": 412,
+    "profile": {
+      "name": "ASUS ROG Ally",
+      "endpoint_type": "internal_speaker",
+      "peq_bands": [
+        { "filter_type": "highpass", "freq": 120, "gain": 0.0, "q": 0.8, "enabled": true },
+        { "filter_type": "peaking", "freq": 250, "gain": 4.0, "q": 1.5, "enabled": true },
+        { "filter_type": "peaking", "freq": 1000, "gain": -2.5, "q": 1.2, "enabled": true },
+        { "filter_type": "peaking", "freq": 4000, "gain": 2.0, "q": 1.5, "enabled": true },
+        { "filter_type": "highshelf", "freq": 10000, "gain": 3.5, "q": 0.7, "enabled": true }
+      ],
+      "mb_compressor": [
+        { "threshold": -40, "ratio": 5.0, "attack": 0.5, "release": 30.0, "knee": 0.5, "makeup_gain": 5.0 },
+        { "threshold": -25, "ratio": 3.0, "attack": 2.0, "release": 50.0, "knee": 1.0, "makeup_gain": 1.0 },
+        { "threshold": -18, "ratio": 2.0, "attack": 3.5, "release": 70.0, "knee": 1.5, "makeup_gain": 0.0 },
+        { "threshold": -10, "ratio": 1.5, "attack": 5.0, "release": 90.0, "knee": 2.0, "makeup_gain": 0.0 }
+      ],
+      "volmax_boost": 384.0,
+      "ieq_enabled": true,
+      "ieq_amount": 9.0,
+      "dialog_enhancer": 3.0,
+      "surround_boost": 5.0
+    }
+  }
+]

@@ -37,3 +37,5 @@ Thumbs.db
 
 # pybuild build artifacts
 .pybuild/
+*.AppImage
+*.deb

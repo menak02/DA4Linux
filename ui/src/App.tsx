@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Tabs } from "./components/Tabs";
 import { Dashboard } from "./components/Dashboard";
-import { Stages } from "./components/Stages";
+import { Library } from "./components/Library";
+import { DSPEditor } from "./components/DSPEditor";
 import { Settings } from "./components/Settings";
 import { AICommandPalette } from "./components/AICommandPalette";
 import { useSettings } from "./hooks/useSettings";
@@ -14,7 +15,8 @@ function App() {
 
   const TABS = [
     { id: "dashboard", label: "Dashboard" },
-    { id: "stages", label: "DSP Stages" },
+    { id: "library", label: "Library" },
+    { id: "editor", label: "DSP Editor" },
     { id: "settings", label: "Settings" },
   ];
 
@@ -44,7 +46,8 @@ function App() {
       {/* Main Content Area */}
       <main className="max-w-6xl mx-auto w-full">
         {activeTab === "dashboard" && <Dashboard />}
-        {activeTab === "stages" && <Stages />}
+        {activeTab === "library" && <Library />}
+        {activeTab === "editor" && <DSPEditor />}
         {activeTab === "settings" && <Settings />}
       </main>
 

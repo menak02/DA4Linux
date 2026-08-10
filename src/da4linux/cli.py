@@ -106,9 +106,16 @@ def _cmd_profiles(args):
 
 
 def _cmd_parse(args):
+    import json
+    from dataclasses import asdict
     from .parser import parse_dax3_xml
 
     tuning = parse_dax3_xml(args.xml_file)
+    
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(tuning), indent=2))
+        return
+
     print(f"=== DAX3 XML: {args.xml_file} ===")
     endpoints = tuning.endpoints
     if not endpoints:
@@ -198,15 +205,59 @@ def _cmd_generate(args):
             print("  Warning: No endpoints found. Using built-in fallback.")
 
     if profile is None:
-        profile_key = args.profile or get_profile_key(device_info)
-        print(f"Using built-in profile: {profile_key}")
-        profile = get_profile(profile_key)
-        if profile is None:
-            print(f"  Warning: No profile for '{profile_key}'. Using generic laptop profile.")
-            profile = get_profile("GENERIC_LAPTOP")
+        if getattr(args, "json_profile", None):
+            import json
+            from .parser import PEQBand, MBCompressorBand, AudioOptimizerBand
+            data = json.loads(args.json_profile)
+            bands = [
+                PEQBand(
+                    filter_type=b.get("filter_type", b.get("type", "bell")),
+                    freq=b.get("freq", 1000.0),
+                    gain=b.get("gain", 0.0),
+                    q=b.get("q", 0.707),
+                    enabled=b.get("enabled", True),
+                )
+                for b in data.get("peq_bands", [])
+            ]
+            mb_compressor = [
+                MBCompressorBand(
+                    threshold=b.get("threshold", 0.0),
+                    ratio=b.get("ratio", 1.0),
+                    attack=b.get("attack", 5.0),
+                    release=b.get("release", 50.0),
+                    knee=b.get("knee", 0.0),
+                    makeup_gain=b.get("makeup_gain", 0.0),
+                )
+                for b in data.get("mb_compressor", [])
+            ]
+            ao_bands = [AudioOptimizerBand(gains=b.get("gains", [0.0]*20)) for b in data.get("ao_bands", [])]
+            
+            profile = DAX3Profile(
+                name=data.get("name", "Custom UI Profile"),
+                endpoint_type=data.get("endpoint_type", "internal_speaker"),
+                peq_bands=bands,
+                ao_bands=ao_bands,
+                mb_compressor=mb_compressor,
+                volmax_boost=data.get("volmax_boost", 4.0),
+                ieq_enabled=data.get("ieq_enabled", False),
+                ieq_amount=data.get("ieq_amount", 0.0),
+                ieq_curve=data.get("ieq_curve", []),
+                dialog_enhancer=data.get("dialog_enhancer", 0.0),
+                volume_leveler=data.get("volume_leveler", 0.0),
+                surround_boost=data.get("surround_boost", 0.0),
+                crossover_freqs=data.get("crossover_freqs", []),
+            )
+            print("Using custom UI JSON profile")
+        else:
+            profile_key = args.profile or get_profile_key(device_info)
+            print(f"Using built-in profile: {profile_key}")
+            profile = get_profile(profile_key)
             if profile is None:
-                print("  Error: No profiles available!")
-                sys.exit(1)
+                print(f"  Warning: No profile for '{profile_key}'. Using generic laptop profile.")
+                profile = get_profile("GENERIC_LAPTOP")
+                if profile is None:
+                    print("  Error: No profiles available!")
+                    sys.exit(1)
 
     # Stage config
     stages = _parse_stages(args.stages, args.disable)
@@ -817,6 +868,7 @@ def main():
     # parse
     parse_parser = subparsers.add_parser("parse", help="Parse DAX3 XML tuning file")
     parse_parser.add_argument("xml_file", help="Path to dax3_ext_*.xml file")
+    parse_parser.add_argument("--json", action="store_true", help="Output parsed DAX3Tuning as JSON")
 
     # generate
     gen_parser = subparsers.add_parser(
@@ -846,6 +898,10 @@ def main():
     gen_parser.add_argument(
         "--disable",
         help="Comma-separated stages to disable",
+    )
+    gen_parser.add_argument(
+        "--json-profile",
+        help="Raw JSON string containing a full custom profile to inject",
     )
     gen_parser.add_argument(
         "--mode",

@@ -4,7 +4,7 @@ When no DAX3 XML is available, these profiles provide safe defaults
 for known laptop models.
 """
 
-from ..parser import DAX3Profile, PEQBand, RegulatorSettings
+from ..parser import DAX3Profile, PEQBand, RegulatorSettings, MBCompressorBand, AudioOptimizerBand
 
 STAGE_DEFAULTS = {
     "fir": True,
@@ -128,7 +128,7 @@ def get_profile(key: str) -> DAX3Profile | None:
     for b in data.get("peq_bands", []):
         bands.append(
             PEQBand(
-                filter_type=b.get("type", "bell"),
+                filter_type=b.get("filter_type", b.get("type", "bell")),
                 freq=b.get("freq", 1000.0),
                 gain=b.get("gain", 0.0),
                 q=b.get("q", 0.707),
@@ -136,9 +136,35 @@ def get_profile(key: str) -> DAX3Profile | None:
             )
         )
 
+    mb_compressor = []
+    for b in data.get("mb_compressor", []):
+        mb_compressor.append(
+            MBCompressorBand(
+                threshold=b.get("threshold", 0.0),
+                ratio=b.get("ratio", 1.0),
+                attack=b.get("attack", 5.0),
+                release=b.get("release", 50.0),
+                knee=b.get("knee", 0.0),
+                makeup_gain=b.get("makeup_gain", 0.0),
+            )
+        )
+        
+    ao_bands = []
+    for b in data.get("ao_bands", []):
+        ao_bands.append(AudioOptimizerBand(gains=b.get("gains", [0.0] * 20)))
+
     return DAX3Profile(
         name=data.get("name", key),
-        endpoint_type="internal_speaker",
+        endpoint_type=data.get("endpoint_type", "internal_speaker"),
         peq_bands=bands,
+        ao_bands=ao_bands,
+        mb_compressor=mb_compressor,
         volmax_boost=data.get("volmax_boost", 4.0),
+        ieq_enabled=data.get("ieq_enabled", False),
+        ieq_amount=data.get("ieq_amount", 0.0),
+        ieq_curve=data.get("ieq_curve", []),
+        dialog_enhancer=data.get("dialog_enhancer", 0.0),
+        volume_leveler=data.get("volume_leveler", 0.0),
+        surround_boost=data.get("surround_boost", 0.0),
+        crossover_freqs=data.get("crossover_freqs", []),
     )

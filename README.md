@@ -39,11 +39,11 @@ This installs:
 - App launchers and desktop icons.
 
 **GUI Features:**
-- Scrollable Bento Box architecture.
-- Full state persistence for settings.
-- Dark mode, OLED True-Black mode, and Accent Color support.
-- DSP Stage toggles and a Global Bypass switch.
-- Accessibility support (Reduce Motion, High Contrast).
+- **DAX3 Importer**: Drag and drop Windows `.xml` drivers to instantly clone OEM tuning profiles.
+- **DSP Editor**: Deeply edit PEQ Bands, Multiband Compressors, IEQ, and Loudness Macros directly in the app.
+- **Community Hub**: (Coming Soon) Browse and download community-made audio profiles.
+- **Dashboard**: Global Bypass switch and Server Restart controls.
+- **Aesthetics**: Dark mode, OLED True-Black mode, and Accent Color support.
 
 ### 3. Compiling from Source
 If you want to build the GUI and CLI binaries from source, you need Node.js/npm and Cargo/Rust installed.
