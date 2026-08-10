@@ -34,9 +34,16 @@ Download the `.deb` package from the [GitHub Releases](https://github.com/menak0
 sudo apt install ./da4linux_0.1.0_amd64.deb
 ```
 This installs:
-- `/usr/bin/da4linux` (The Bento Box desktop GUI)
+- `/usr/bin/da4linux` (The Desktop GUI)
 - `/usr/bin/da4linux-cli` (The standalone CLI engine)
 - App launchers and desktop icons.
+
+**GUI Features:**
+- Scrollable Bento Box architecture.
+- Full state persistence for settings.
+- Dark mode, OLED True-Black mode, and Accent Color support.
+- DSP Stage toggles and a Global Bypass switch.
+- Accessibility support (Reduce Motion, High Contrast).
 
 ### 3. Compiling from Source
 If you want to build the GUI and CLI binaries from source, you need Node.js/npm and Cargo/Rust installed.

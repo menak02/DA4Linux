@@ -650,8 +650,8 @@ def generate_filter_graph(
     dial_boost = ((dialogue_boost - 1.0) * 3.0) if (stages.get("dialogue", True) and dialogue_boost > 1.0) else 0.0
     total_boost = peq_max_boost + bass_boost + dial_boost + volmax_db
 
-    # Pre-attenuate volmax gain if cumulative boost exceeds +14dB headroom
-    headroom_attenuation = max(0.0, total_boost - 14.0)
+    # Pre-attenuate volmax gain if cumulative boost exceeds +24dB headroom
+    headroom_attenuation = max(0.0, total_boost - 24.0)
     net_volmax_db = max(0.0, volmax_db - headroom_attenuation)
     volmax_linear = pow(10.0, net_volmax_db / 20.0) if net_volmax_db > 0 else 1.0
 
