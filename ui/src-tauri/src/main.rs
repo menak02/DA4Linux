@@ -2,9 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    // Ensure GTK prefers Wayland but falls back to X11 seamlessly
-    std::env::set_var("GDK_BACKEND", "wayland,x11");
-
     if std::path::Path::new("/sys/module/nvidia").exists() {
         // Fix Wayland protocol Error 71 (Explicit Sync) on NVIDIA
         std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
