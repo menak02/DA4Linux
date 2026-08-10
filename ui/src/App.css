@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  /* OKLCH Perceptual Color Palette */
+  --color-background: oklch(0.98 0.005 240);
+  --color-foreground: oklch(0.15 0.02 240);
+  --color-surface: oklch(0.99 0.002 240);
+  --color-surface-hover: oklch(0.95 0.01 240);
+  --color-primary: oklch(0.62 0.22 255);
+  --color-primary-foreground: oklch(0.99 0 0);
+  --color-muted: oklch(0.92 0.01 240);
+  --color-muted-foreground: oklch(0.45 0.02 240);
+  --color-border: oklch(0.90 0.01 240);
+
+  /* Glassmorphism Design Tokens */
+  --glass-bg-light: oklch(1 0 0 / 0.15);
+  --glass-bg-dark: oklch(0.12 0.015 240 / 0.40);
+  --glass-border-light: oklch(1 0 0 / 0.25);
+  --glass-border-dark: oklch(0.98 0.005 240 / 0.12);
+  --glass-blur-sm: blur(4px);
+  --glass-blur-md: blur(12px);
+  --glass-blur-lg: blur(20px);
+
+  /* Fluid Typography Scale */
+  --font-sans: "Inter Variable", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* Base styles and dark mode */
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+  
+  html, body {
+    @apply bg-background text-foreground m-0 p-0 overflow-hidden font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+.dark {
+  --color-background: oklch(0.12 0.015 240);
+  --color-foreground: oklch(0.98 0.005 240);
+  --color-surface: oklch(0.16 0.015 240);
+  --color-surface-hover: oklch(0.20 0.02 240);
+  --color-muted: oklch(0.22 0.02 240);
+  --color-muted-foreground: oklch(0.65 0.02 240);
+  --color-border: oklch(0.25 0.02 240);
+}
