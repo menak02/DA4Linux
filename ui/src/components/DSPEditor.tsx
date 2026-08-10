@@ -1,10 +1,16 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { BentoTile } from "./BentoTile";
 import { useProfile, PEQBand } from "../hooks/useProfile";
 import * as Switch from "@radix-ui/react-switch";
+import { invoke } from "@tauri-apps/api/core";
 
 export const DSPEditor: React.FC = () => {
   const { profile, updateProfile, isLoaded } = useProfile();
+  const [plugins, setPlugins] = useState<string[]>([]);
+
+  useEffect(() => {
+    invoke<string[]>("detect_plugins").then(setPlugins).catch(console.error);
+  }, []);
 
   if (!isLoaded) return null;
 
@@ -79,7 +85,12 @@ export const DSPEditor: React.FC = () => {
 
       {/* Multiband Compressor */}
       <BentoTile title="Multiband Compressor" description="4-Band dynamic range control">
-        <div className="mt-4 space-y-4">
+        {!plugins.includes("lsp-plugins-lv2") && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-xs text-red-400">
+            <strong>LSP Plugins Missing:</strong> Please install <code>lsp-plugins-lv2</code> to use this feature.
+          </div>
+        )}
+        <div className={`mt-4 space-y-4 ${!plugins.includes("lsp-plugins-lv2") ? "opacity-50 pointer-events-none grayscale" : ""}`}>
           {profile.mb_compressor.map((band, idx) => (
             <div key={idx} className="p-3 bg-surface border border-border rounded-xl">
               <div className="text-xs font-semibold mb-3">Band {idx + 1}</div>

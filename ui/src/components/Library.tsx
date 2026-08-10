@@ -7,6 +7,14 @@ import PRESETS from "../presets.json";
 
 export const Library: React.FC = () => {
   const { profile, importFromXml, isLoaded, updateProfile } = useProfile();
+  const [remotePresets, setRemotePresets] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    fetch("https://raw.githubusercontent.com/mena/DA4Linux/master/ui/src/presets.json")
+      .then((res) => res.json())
+      .then(setRemotePresets)
+      .catch(() => setRemotePresets(PRESETS));
+  }, []);
 
   if (!isLoaded) return null;
 
@@ -48,9 +56,9 @@ export const Library: React.FC = () => {
         </div>
       </BentoTile>
 
-      <BentoTile title="Community Hub" description="Browse and download reverse-engineered profiles for your laptop." badge="Coming Soon">
+      <BentoTile title="Community Hub" description="Browse and download reverse-engineered profiles for your laptop.">
         <div className="mt-6 space-y-3">
-          {PRESETS.map((preset) => (
+          {remotePresets.map((preset: any) => (
             <div key={preset.id} className="p-4 rounded-xl bg-surface border border-border flex items-center justify-between hover:border-primary/50 transition-colors cursor-pointer" onClick={() => handleLoadPreset(preset.profile)}>
               <div>
                 <div className="text-sm font-semibold">{preset.name}</div>
@@ -64,6 +72,9 @@ export const Library: React.FC = () => {
               </div>
             </div>
           ))}
+          {remotePresets.length === 0 && (
+            <div className="text-sm text-muted-foreground italic text-center py-4">Loading community profiles...</div>
+          )}
         </div>
       </BentoTile>
     </div>

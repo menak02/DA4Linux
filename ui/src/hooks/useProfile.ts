@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { load } from "@tauri-apps/plugin-store";
-import { Command } from "@tauri-apps/plugin-shell";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface PEQBand {
   filter_type: string;
@@ -19,16 +19,24 @@ export interface MBCompressorBand {
   makeup_gain: number;
 }
 
+export interface AudioOptimizerBand {
+  gains: number[];
+}
+
 export interface DAX3Profile {
   name: string;
   endpoint_type: string;
   peq_bands: PEQBand[];
+  ao_bands: AudioOptimizerBand[];
   mb_compressor: MBCompressorBand[];
   volmax_boost: number;
   ieq_enabled: boolean;
   ieq_amount: number;
+  ieq_curve: number[];
   dialog_enhancer: number;
+  volume_leveler: number;
   surround_boost: number;
+  crossover_freqs: number[];
 }
 
 const defaultProfile: DAX3Profile = {
@@ -41,6 +49,7 @@ const defaultProfile: DAX3Profile = {
     { filter_type: "peaking", freq: 3500, gain: -2.0, q: 1.5, enabled: true },
     { filter_type: "highshelf", freq: 8000, gain: 2.5, q: 0.7, enabled: true },
   ],
+  ao_bands: [],
   mb_compressor: [
     { threshold: -20, ratio: 2.0, attack: 5.0, release: 50.0, knee: 2.0, makeup_gain: 0 },
     { threshold: -24, ratio: 2.5, attack: 5.0, release: 50.0, knee: 2.0, makeup_gain: 0 },
@@ -50,8 +59,11 @@ const defaultProfile: DAX3Profile = {
   volmax_boost: 200.0,
   ieq_enabled: true,
   ieq_amount: 5.0,
+  ieq_curve: [],
   dialog_enhancer: 0.0,
+  volume_leveler: 0.0,
   surround_boost: 0.0,
+  crossover_freqs: [],
 };
 
 let storeInstance: any = null;
@@ -93,60 +105,31 @@ export function useProfile() {
       const store = await getStore();
       await store.set("profile", newProfile);
       await store.save();
+      // Apply immediately in real-time
+      await invoke("apply_dsp_profile", { profile: newProfile });
     } catch (e) {
-      console.error("Failed to save profile:", e);
+      console.error("Failed to save or apply profile:", e);
     }
   };
 
   const importFromXml = async (xmlPath: string) => {
     try {
-      const command = Command.sidecar("bin/da4linux-cli", ["parse", "--json", xmlPath]);
-      const output = await command.execute();
-      if (output.code !== 0) throw new Error(output.stderr);
-      
-      const parsed = JSON.parse(output.stdout);
-      const endpointKey = Object.keys(parsed.endpoints)[0];
-      if (endpointKey) {
-        const p = parsed.endpoints[endpointKey];
-        await updateProfile({
-          name: p.name || endpointKey,
-          peq_bands: p.peq_bands || [],
-          mb_compressor: p.mb_compressor || [],
-          volmax_boost: p.volmax_boost || 0,
-          ieq_enabled: p.ieq_enabled || false,
-          ieq_amount: p.ieq_amount || 0,
-          dialog_enhancer: p.dialog_enhancer || 0,
-          surround_boost: p.surround_boost || 0,
-        });
-        alert(`Successfully imported DAX3 Profile: ${p.name || endpointKey}`);
-      }
+      // NOTE: We will port parse_dax3_xml to Rust soon.
+      // For now, this is a placeholder.
+      alert(`XML Parsing is being ported to Rust! Check back soon.`);
     } catch (e) {
       console.error(e);
       alert("Failed to parse XML: " + e);
     }
   };
 
-  const regenerateDsp = async (activeStages: string[] = []) => {
+  const regenerateDsp = async () => {
     try {
-      const profileJson = JSON.stringify(profile);
-      const args = ["generate", "--json-profile", profileJson];
-      if (activeStages.length > 0) {
-        args.push("--stages", activeStages.join(","));
-      }
-      
-      const command = Command.sidecar("bin/da4linux-cli", args);
-      const output = await command.execute();
-      
-      if (output.code !== 0) {
-        throw new Error(output.stderr);
-      }
-      
-      // Auto-restart pipewire
-      await Command.sidecar("bin/da4linux-cli", ["restart-pipewire"]).execute();
-      
-      return output.stdout;
+      // Direct IPC call to Rust to load the PipeWire module in real-time!
+      await invoke("apply_dsp_profile", { profile });
+      return "Successfully loaded into PipeWire";
     } catch (e) {
-      console.error(e);
+      console.error("Failed to apply DSP:", e);
       throw e;
     }
   };
