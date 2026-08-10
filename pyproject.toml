@@ -31,7 +31,7 @@ Repository = "https://github.com/menak02/DA4Linux"
 Issues = "https://github.com/menak02/DA4Linux/issues"
 
 [project.scripts]
-da4linux = "da4linux.cli:main"
+da4linux-cli = "da4linux.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
