@@ -18,77 +18,45 @@ coupling.
 
 ## Installation
 
-The Python package is installed with pip; the Makefile installs the
-launcher and integration files (man page, XDG autostart entry, runit
-templates) and works on any Linux distribution.
+DA4Linux provides a native desktop GUI alongside its CLI config generator. You can install it using one of three options:
 
-### 1. Install the Python package
-
+### 1. Universal AppImage (Recommended)
+Download the latest `da4linux_*.AppImage` from the [GitHub Releases](https://github.com/menak02/DA4Linux/releases) page.
+Make it executable and run it:
 ```bash
-python3 -m pip install .          # system-wide
+chmod +x da4linux_0.1.0_amd64.AppImage
+./da4linux_0.1.0_amd64.AppImage
 ```
 
-or into your user environment (no root):
-
+### 2. Debian/Ubuntu Package (.deb)
+Download the `.deb` package from the [GitHub Releases](https://github.com/menak02/DA4Linux/releases) page and install it:
 ```bash
-python3 -m pip install --user .
+sudo apt install ./da4linux_0.1.0_amd64.deb
+```
+This installs:
+- `/usr/bin/da4linux` (The Bento Box desktop GUI)
+- `/usr/bin/da4linux-cli` (The standalone CLI engine)
+- App launchers and desktop icons.
+
+### 3. Compiling from Source
+If you want to build the GUI and CLI binaries from source, you need Node.js/npm and Cargo/Rust installed.
+
+Install system dependencies:
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev build-essential -y
+pip install pyinstaller
 ```
 
-### 2. System-wide install (sudo)
-
-```bash
-git clone https://github.com/menak02/DA4Linux
-cd da4linux
-sudo make install
-```
-
-Custom prefix:
-
-```bash
-sudo make install PREFIX=/usr
-```
-
-Staging install for packaging (never touches the live system):
-
-```bash
-make install DESTDIR=/tmp/staging PREFIX=/usr
-```
-
-### Per-user install (no root)
-
-Installs the autostart entry to `~/.config/autostart/` and the runit
-templates to `~/.config/runit/`:
-
-```bash
-make install-user
-```
-
-If your launcher lives outside the default prefix, point the autostart
-entry at it:
-
-```bash
-make install-user PREFIX=$HOME/.local
-```
-
-### Uninstall
-
-```bash
-sudo make uninstall
-```
-
-### Debian/Devuan .deb (alternative)
-
-```bash
-sudo apt install ./da4linux_0.1.0-1_all.deb
-```
-
-### From source (editable)
-
+Compile and package the application:
 ```bash
 git clone https://github.com/menak02/DA4Linux
-cd da4linux
-python3 -m pip install -e .
+cd DA4Linux
+./build_sidecar.sh
+cd ui
+npm install
+npm run tauri build
 ```
+The compiled binaries, `.deb`, and `.AppImage` will be located under `ui/src-tauri/target/release/bundle/`.
 
 ## Auto-Start on Login
 
@@ -122,16 +90,16 @@ sudo apt install pipewire wireplumber lsp-plugins-lv2 calf-plugins
 
 ```bash
 # Detect your audio hardware
-da4linux detect
+da4linux-cli detect
 
 # Parse a DAX3 XML tuning file (from Windows DriverStore)
-da4linux parse /path/to/dax3_ext_speaker.xml
+da4linux-cli parse /path/to/dax3_ext_speaker.xml
 
 # Generate PipeWire filter-chain config and install it
-da4linux generate --xml /path/to/dax3_ext_speaker.xml
+da4linux-cli generate --xml /path/to/dax3_ext_speaker.xml
 
 # Or use a built-in profile (no DAX3 XML needed)
-da4linux generate
+da4linux-cli generate
 
 # Restart PipeWire to load the new config
 # The command depends on your init system:

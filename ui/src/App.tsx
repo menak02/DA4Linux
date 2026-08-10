@@ -6,7 +6,7 @@ import { Command } from "@tauri-apps/plugin-shell";
 function App() {
   const runCommand = async (args: string[]) => {
     try {
-      const command = Command.sidecar("bin/da4linux", args);
+      const command = Command.sidecar("bin/da4linux-cli", args);
       const output = await command.execute();
       console.log(output.stdout);
       alert(output.stdout || output.stderr || "Command executed successfully.");

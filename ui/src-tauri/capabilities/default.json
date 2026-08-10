@@ -11,7 +11,7 @@
     "shell:default",
     {
       "identifier": "shell:allow-execute",
-      "allow": [{ "name": "bin/da4linux", "sidecar": true }]
+      "allow": [{ "name": "bin/da4linux-cli", "sidecar": true }]
     }
   ]
 }
