@@ -12,6 +12,16 @@ fn apply_dsp_profile(profile: DAX3Profile) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn bypass_dsp_profile() -> Result<(), String> {
+    pw::bypass_dsp_profile()
+}
+
+#[tauri::command]
+fn restart_pipewire() -> Result<(), String> {
+    pw::restart_pipewire()
+}
+
+#[tauri::command]
 fn detect_plugins() -> Vec<String> {
     pw::detect_plugins()
 }
@@ -23,7 +33,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![apply_dsp_profile, detect_plugins])
+        .invoke_handler(tauri::generate_handler![
+            apply_dsp_profile,
+            bypass_dsp_profile,
+            restart_pipewire,
+            detect_plugins
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

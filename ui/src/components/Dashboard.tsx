@@ -1,7 +1,7 @@
 import React from "react";
 import { BentoTile } from "./BentoTile";
 import { Volume2, HardDrive, RefreshCw, PowerOff } from "lucide-react";
-import { Command } from "@tauri-apps/plugin-shell";
+import { invoke } from "@tauri-apps/api/core";
 import { useProfile } from "../hooks/useProfile";
 
 export const Dashboard: React.FC = () => {
@@ -10,10 +10,8 @@ export const Dashboard: React.FC = () => {
   const handleRegenerate = async (bypass = false) => {
     try {
       if (bypass) {
-        // Just run the regular CLI bypass
-        const command = Command.sidecar("bin/da4linux-cli", ["generate", "--disable", "all"]);
-        const output = await command.execute();
-        alert(output.stdout || output.stderr);
+        await invoke("bypass_dsp_profile");
+        alert("DSP Profile bypassed successfully.");
         return;
       }
       
@@ -24,11 +22,10 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const runCommand = async (args: string[]) => {
+  const handleRestartServer = async () => {
     try {
-      const command = Command.sidecar("bin/da4linux-cli", args);
-      const output = await command.execute();
-      alert(output.stdout || output.stderr || "Command executed successfully.");
+      await invoke("restart_pipewire");
+      alert("PipeWire server restarted successfully.");
     } catch (e) {
       alert("Error: " + e);
     }
@@ -55,7 +52,7 @@ export const Dashboard: React.FC = () => {
           <button onClick={() => handleRegenerate(true)} className="px-6 bg-destructive/10 text-destructive font-medium py-3 rounded-xl hover:bg-destructive/20 transition-colors flex items-center justify-center gap-2 cursor-pointer" title="Global Bypass">
             <PowerOff className="w-4 h-4" /> Bypass
           </button>
-          <button onClick={() => runCommand(["restart-pipewire"])} className="flex-1 bg-surface border border-border font-medium py-3 rounded-xl hover:bg-surface-hover transition-colors flex items-center justify-center gap-2 cursor-pointer">
+          <button onClick={handleRestartServer} className="flex-1 bg-surface border border-border font-medium py-3 rounded-xl hover:bg-surface-hover transition-colors flex items-center justify-center gap-2 cursor-pointer">
             <RefreshCw className="w-4 h-4" /> Restart Server
           </button>
         </div>

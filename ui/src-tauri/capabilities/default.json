@@ -10,10 +10,6 @@
     "opener:default",
     "shell:default",
     "store:default",
-    "dialog:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [{ "name": "bin/da4linux-cli", "sidecar": true }]
-    }
+    "dialog:default"
   ]
 }
