@@ -112,7 +112,7 @@ export function useProfile() {
     }
   };
 
-  const importFromXml = async (xmlPath: string) => {
+  const importFromXml = async (_xmlPath: string) => {
     try {
       // NOTE: We will port parse_dax3_xml to Rust soon.
       // For now, this is a placeholder.
