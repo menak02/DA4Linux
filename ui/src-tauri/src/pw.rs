@@ -153,10 +153,40 @@ pub fn restart_pipewire() -> Result<(), String> {
     
     std::thread::sleep(std::time::Duration::from_millis(500));
     
-    let _ = Command::new("pipewire").spawn();
-    let _ = Command::new("wireplumber").spawn();
-    let _ = Command::new("pipewire-pulse").spawn();
+    let _ = Command::new("setsid")
+        .arg("pipewire")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    let _ = Command::new("setsid")
+        .arg("wireplumber")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    let _ = Command::new("setsid")
+        .arg("pipewire-pulse")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 
     Ok(())
+}
+
+pub fn is_dsp_active() -> bool {
+    let output = Command::new("pw-cli")
+        .args(&["list-objects", "Module"])
+        .output();
+        
+    if let Ok(out) = output {
+        let text = String::from_utf8_lossy(&out.stdout);
+        text.contains("libpipewire-module-filter-chain")
+    } else {
+        false
+    }
 }
 

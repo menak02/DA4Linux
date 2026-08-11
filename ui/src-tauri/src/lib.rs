@@ -22,6 +22,11 @@ fn restart_pipewire() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn is_dsp_active() -> bool {
+    pw::is_dsp_active()
+}
+
+#[tauri::command]
 fn detect_plugins() -> Vec<String> {
     pw::detect_plugins()
 }
@@ -37,6 +42,7 @@ pub fn run() {
             apply_dsp_profile,
             bypass_dsp_profile,
             restart_pipewire,
+            is_dsp_active,
             detect_plugins
         ])
         .run(tauri::generate_context!())

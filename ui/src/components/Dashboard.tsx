@@ -6,17 +6,43 @@ import { useProfile } from "../hooks/useProfile";
 
 export const Dashboard: React.FC = () => {
   const { regenerateDsp } = useProfile();
+  const [isBypassed, setIsBypassed] = React.useState(false);
 
-  const handleRegenerate = async (bypass = false) => {
-    try {
-      if (bypass) {
-        await invoke("bypass_dsp_profile");
-        alert("DSP Profile bypassed successfully.");
-        return;
+  React.useEffect(() => {
+    async function checkDspStatus() {
+      try {
+        const active = await invoke<boolean>("is_dsp_active");
+        setIsBypassed(!active);
+      } catch (e) {
+        console.error("Failed to check active DSP state:", e);
       }
-      
+    }
+    checkDspStatus();
+  }, []);
+
+  const handleRegenerate = async () => {
+    try {
       const stdout = await regenerateDsp();
+      setIsBypassed(false);
       alert(stdout || "DSP Profile applied successfully.");
+    } catch (e) {
+      alert("Error: " + e);
+    }
+  };
+
+  const toggleBypass = async () => {
+    try {
+      if (isBypassed) {
+        // Restore DSP
+        const stdout = await regenerateDsp();
+        setIsBypassed(false);
+        alert(stdout || "DSP Profile restored successfully.");
+      } else {
+        // Bypass DSP
+        await invoke("bypass_dsp_profile");
+        setIsBypassed(true);
+        alert("DSP Profile bypassed successfully.");
+      }
     } catch (e) {
       alert("Error: " + e);
     }
@@ -25,6 +51,15 @@ export const Dashboard: React.FC = () => {
   const handleRestartServer = async () => {
     try {
       await invoke("restart_pipewire");
+      // Check status again after restart
+      setTimeout(async () => {
+        try {
+          const active = await invoke<boolean>("is_dsp_active");
+          setIsBypassed(!active);
+        } catch (e) {
+          console.error("Failed to re-check DSP state after restart:", e);
+        }
+      }, 1000);
       alert("PipeWire server restarted successfully.");
     } catch (e) {
       alert("Error: " + e);
@@ -46,11 +81,19 @@ export const Dashboard: React.FC = () => {
         </div>
         
         <div className="flex gap-4 mt-auto">
-          <button onClick={() => handleRegenerate(false)} className="flex-1 bg-primary text-primary-foreground font-semibold py-3 rounded-xl shadow-lg hover:bg-primary-hover transition-colors cursor-pointer">
+          <button onClick={handleRegenerate} className="flex-1 bg-primary text-primary-foreground font-semibold py-3 rounded-xl shadow-lg hover:bg-primary-hover transition-colors cursor-pointer">
             Regenerate DSP
           </button>
-          <button onClick={() => handleRegenerate(true)} className="px-6 bg-destructive/10 text-destructive font-medium py-3 rounded-xl hover:bg-destructive/20 transition-colors flex items-center justify-center gap-2 cursor-pointer" title="Global Bypass">
-            <PowerOff className="w-4 h-4" /> Bypass
+          <button 
+            onClick={toggleBypass} 
+            className={`px-6 font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+              isBypassed 
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive-hover" 
+                : "bg-destructive/10 text-destructive hover:bg-destructive/20"
+            }`}
+            title={isBypassed ? "Restore DSP" : "Global Bypass"}
+          >
+            <PowerOff className="w-4 h-4" /> {isBypassed ? "Bypassed" : "Bypass"}
           </button>
           <button onClick={handleRestartServer} className="flex-1 bg-surface border border-border font-medium py-3 rounded-xl hover:bg-surface-hover transition-colors flex items-center justify-center gap-2 cursor-pointer">
             <RefreshCw className="w-4 h-4" /> Restart Server
