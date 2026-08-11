@@ -146,35 +146,8 @@ pub fn restart_pipewire() -> Result<(), String> {
         }
     }
 
-    // 4. Fallback: manual process restart
-    let _ = Command::new("pkill").arg("pipewire-pulse").output();
-    let _ = Command::new("pkill").arg("wireplumber").output();
-    let _ = Command::new("pkill").arg("pipewire").output();
-    
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    
-    let _ = Command::new("setsid")
-        .arg("pipewire")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-
-    let _ = Command::new("setsid")
-        .arg("wireplumber")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-
-    let _ = Command::new("setsid")
-        .arg("pipewire-pulse")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-
-    Ok(())
+    // 4. Return error on unsupported manual restarts
+    Err("PipeWire is not managed by systemd or a supported active service directory. To prevent breaking your audio session, manual process killing has been disabled. Please restart your system or log out and back in to restart PipeWire.".into())
 }
 
 pub fn is_dsp_active() -> bool {
