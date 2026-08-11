@@ -1,0 +1,3 @@
+#!/bin/sh
+python3 .githooks/bump_version.py
+git add ui/src-tauri/tauri.conf.json ui/package.json pyproject.toml
